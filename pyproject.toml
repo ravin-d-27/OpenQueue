@@ -1,0 +1,17 @@
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-q"
+testpaths = ["tests"]
+
+# pytest-asyncio configuration:
+# - asyncio_mode="auto" lets pytest-asyncio handle async tests without needing a custom event_loop fixture.
+# - asyncio_default_fixture_loop_scope avoids the deprecation warning about the default loop scope changing.
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+# Keep warnings visible but ignore the known pytest-asyncio deprecation if it appears from dependencies.
+filterwarnings = [
+  "default",
+  "ignore:The configuration option \"asyncio_default_fixture_loop_scope\" is unset\\.:pytest.PytestDeprecationWarning",
+  "ignore:The event_loop fixture provided by pytest-asyncio has been redefined.*:DeprecationWarning",
+]

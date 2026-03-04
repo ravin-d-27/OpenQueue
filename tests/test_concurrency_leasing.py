@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import random
 import string
@@ -153,10 +154,17 @@ async def _enqueue_jobs(
         payload = {"i": i}
         values.append((user_id, queue_name, payload, priority))
 
+    # asyncpg can require JSONB to be passed as a JSON string depending on codecs/config.
+    # Use json.dumps(payload) to avoid "expected str, got dict" errors.
+    #
+    # Ensure the values tuple size matches the INSERT parameters (4 values):
+    #   (user_id, queue_name, payload_json, priority)
+    values = [(uid, qn, json.dumps(pl), pr) for (uid, qn, pl, pr) in values]
+
     await conn.executemany(
         """
         INSERT INTO jobs (user_id, queue_name, payload, priority)
-        VALUES ($1, $2, $3, $4)
+        VALUES ($1, $2, $3::jsonb, $4)
         """,
         values,
     )
@@ -208,7 +216,7 @@ async def _lease_one(
                     updated_at = NOW(),
                     started_at = COALESCE(started_at, NOW()),
                     locked_by = $1,
-                    locked_until = NOW() + ($2::text || ' seconds')::interval,
+                    locked_until = NOW() + ($2 || ' seconds')::interval,
                     lease_token = gen_random_uuid(),
                     lease_lost_count = CASE
                         WHEN status = 'processing' AND locked_until IS NOT NULL AND locked_until < NOW()
@@ -219,7 +227,7 @@ async def _lease_one(
                 RETURNING id
                 """,
                 worker_id,
-                lease_seconds,
+                str(lease_seconds),
                 row["id"],
                 user_id,
             )
