@@ -8,6 +8,136 @@ This document explains the *why*, the *how*, and the technical details so a new 
 
 ---
 
+## Production readiness
+
+OpenQueue can run in production, but “production-ready” depends on how you deploy it (single instance vs multi-replica) and what guarantees you expect. This section describes:
+
+1) what is already implemented in this repository, and  
+2) what you still need to do to confidently operate OpenQueue as a hosted queue service.
+
+### Implemented production-grade features
+
+#### 1) Core queue correctness & reliability
+- **Leasing with row locking**: Workers lease jobs using Postgres locking (`FOR UPDATE SKIP LOCKED`) to safely handle concurrency.
+- **Visibility timeout recovery**: Jobs stuck in `processing` become leaseable again when `locked_until < NOW()` (prevents permanent “stuck” jobs after worker crashes).
+- **Lease renewal (heartbeat)**: Workers can extend `locked_until` for long-running jobs using a heartbeat endpoint.
+- **ACK / NACK with lease tokens**: Workers must provide `lease_token` to ack/nack/heartbeat, preventing stale workers from updating job state.
+- **Retry backoff with scheduling**: Retries are scheduled by setting `run_at` into the future (exponential backoff with a cap).
+- **Dead-letter queue (DLQ)**: Jobs that exhaust retries (or have retry disabled) transition to `status='dead'` with `dead_at`/`dead_reason`.
+
+#### 2) Database integrity: constraints and indexes
+- **DB-level status constraint**: `CHECK (status IN (...))` prevents invalid states.
+- **Retry bounds constraints**: non-negative retry counts and max retries.
+- **Indexes for hot paths**:
+  - lease hot path: `(user_id, queue_name, run_at, priority DESC, created_at) WHERE status='pending'`
+  - recovery path: `(user_id, queue_name, locked_until) WHERE status='processing'`
+  - DLQ listing: `(user_id, queue_name, dead_at) WHERE status='dead'`
+
+#### 3) Migrations
+- **Alembic migrations included**: an initial migration exists to create users/jobs with constraints and indexes.
+- **Docker Compose applies migrations at startup**: `alembic upgrade head` is run before starting the API.
+
+#### 4) Observability (baseline)
+- **Request IDs**: every request gets `X-Request-ID`.
+- **Structured request logging**: logs include method/path/status/duration and request id.
+- **Prometheus metrics**: `/metrics` exposes counters/histograms for HTTP and key queue operations.
+
+#### 5) Rate limiting (baseline)
+- **In-memory token bucket** rate limits exist for:
+  - enqueue, lease, ack, nack, heartbeat
+  - job listing and queue stats
+- This is **per process** (per replica). It protects a single-node deployment and limits blast radius in development.
+
+#### 6) Readiness checks
+- `/health`: liveness probe (process is up).
+- `/ready`: readiness probe (currently uses a DB-backed dependency path to confirm DB connectivity).
+
+#### 7) Background maintenance (library included)
+- A maintenance module exists to:
+  - reap expired leases (optional policy hook)
+  - delete old jobs (retention)
+  - run a periodic maintenance loop
+- Recommended usage is a **separate maintenance process/container**, not the API process.
+
+---
+
+### What you still need to add to be “production ready” (recommended)
+
+These are the typical gaps that cause outages or security incidents in hosted systems.
+
+#### A) Distributed rate limiting and quotas (multi-replica requirement)
+Current rate limiting is per-instance. For a hosted system with multiple API replicas you should implement one of:
+- **Gateway-level rate limiting** (recommended): Nginx/Envoy/Cloudflare/API Gateway based, keyed by API token/user id.
+- **Shared-store limiter** (Redis/Postgres): consistent limits across replicas.
+
+Add quotas beyond RPS:
+- max payload size per job and result
+- max queue depth per tenant (hard cap)
+- max concurrent in-flight `processing` jobs per tenant/queue
+
+#### B) API key management + rotation (recommended for hosted)
+Today you can store one token hash per user. For a hosted product you typically need:
+- multiple API keys per user (table like `api_keys`)
+- last_used_at per key
+- revoke/rotate keys without downtime
+- optional scoped keys (read-only dashboard vs worker keys)
+
+#### C) Audit/attempt trail (strongly recommended)
+Add a `job_attempts` table that records each lease/ack/nack event:
+- attempt id (UUID)
+- job_id, user_id
+- worker_id
+- leased_at, acked_at, nacked_at
+- lease_token (or attempt_token)
+- error/result snapshot
+- duration
+This enables:
+- debugging (“why did this fail?”)
+- user-facing history in dashboards
+- accurate metrics
+
+#### D) Testing & CI (must-have for correctness)
+You should enforce correctness with:
+- integration tests against Postgres:
+  - concurrent leasing never duplicates jobs
+  - lease-expiry recovery works
+  - heartbeat extends leases correctly
+  - backoff delays leasing until run_at
+  - DLQ transition after retries exhausted
+- a CI pipeline that runs:
+  - migrations
+  - tests
+  - basic lint/type checks (optional but recommended)
+
+#### E) Readiness without auth + DB ping
+Today readiness depends on a DB-backed dependency path. For production, add an explicit DB ping:
+- `SELECT 1` using the pool
+- optional: confirm migration version and critical tables exist
+
+#### F) Operational hardening
+- configurable DB pool sizing
+- statement timeouts
+- request timeouts (reverse proxy)
+- retention policy defaults and tooling
+- avoid high-cardinality metrics labels (do not label by job_id, token, user email)
+- API versioning (`/v1`) to stabilize client contracts
+
+---
+
+### Practical “Production-ready” definition for OpenQueue
+
+OpenQueue is “production-ready” when you can:
+1) survive worker crashes without losing jobs (visibility timeout recovery)  
+2) safely run long jobs (heartbeat)  
+3) avoid retry storms (backoff via run_at)  
+4) isolate and inspect permanent failures (DLQ)  
+5) evolve schema safely (migrations)  
+6) observe and troubleshoot (logs + metrics)  
+7) protect the platform from abuse (quotas + distributed rate limiting)  
+8) prove correctness continuously (integration tests + CI)
+
+---
+
 ## Table of Contents
 
 1. [What OpenQueue is](#what-openqueue-is)
@@ -18,8 +148,11 @@ This document explains the *why*, the *how*, and the technical details so a new 
    - [Jobs](#jobs)
    - [Leases and Lease Tokens](#leases-and-lease-tokens)
    - [Visibility Timeout (Lease Expiry Recovery)](#visibility-timeout-lease-expiry-recovery)
+   - [Lease renewal (Heartbeat) for long-running jobs](#lease-renewal-heartbeat-for-long-running-jobs)
    - [ACK / NACK](#ack--nack)
    - [Retries](#retries)
+   - [Retry backoff and scheduling with `run_at`](#retry-backoff-and-scheduling-with-run_at)
+   - [Dead-letter queue (DLQ)](#dead-letter-queue-dlq)
    - [At-least-once delivery and idempotency](#at-least-once-delivery-and-idempotency)
 5. [System architecture](#system-architecture)
 6. [Database model](#database-model)
@@ -191,6 +324,27 @@ In real systems, workers crash. Without recovery, a leased job could remain stuc
 
 This yields at-least-once processing semantics.
 
+### Lease renewal (Heartbeat) for long-running jobs
+
+Visibility timeout recovery prevents jobs from being stuck forever, but it introduces a new challenge: **long-running jobs**.
+
+If a job legitimately takes longer than its lease duration and the worker does nothing, the lease can expire and the job can be re-leased to another worker. That can lead to duplicate processing.
+
+OpenQueue supports **lease renewal** via a heartbeat mechanism:
+
+- Workers periodically call a heartbeat endpoint while they are processing a job.
+- The server extends `locked_until` forward from the current time, keeping the job leased to that worker.
+- Heartbeat requires the current `lease_token`, so only the worker holding the lease can extend it.
+
+Conceptually:
+
+1. Worker leases a job, receiving `lease_token` and `lease_expires_at`.
+2. Worker processes the job.
+3. If processing is still ongoing, the worker calls heartbeat before expiry.
+4. OpenQueue updates `locked_until = NOW() + lease_seconds`.
+
+This keeps the system safe for long-running workloads while still allowing recovery for crashed workers.
+
 ---
 
 ### ACK / NACK
@@ -216,11 +370,37 @@ Retries are controlled by:
 - `retry_count`
 - `max_retries`
 
-OpenQueue’s basic retry mechanism:
-- on `nack`, if `retry=true` and `retry_count < max_retries`, job returns to `pending` and `retry_count` increments
-- otherwise the job becomes `failed`
+OpenQueue’s retry mechanism is triggered by `nack`:
 
-In more advanced setups, retries should use backoff and delays (via `run_at`), and final failures should go to a DLQ (`dead`). Those are natural next steps.
+- If `retry=true` and retries remain, the job is requeued to `pending` and `retry_count` increments.
+- If retries are exhausted (or retry is disabled), the job is moved to the dead-letter queue (DLQ) with status `dead`.
+
+### Retry backoff and scheduling with `run_at`
+
+Naively retrying immediately can cause “retry storms” (rapid repeated failures that waste worker/DB resources). OpenQueue uses `run_at` to schedule retries with backoff:
+
+- `run_at` means “do not lease this job before this timestamp.”
+- When a job is retried, OpenQueue sets `run_at = NOW() + backoff_interval`.
+- The lease query only considers pending jobs where `run_at <= NOW()`.
+
+Backoff is typically exponential (1s, 2s, 4s, 8s, …) with a cap. This improves stability under failure conditions and gives dependent systems time to recover.
+
+This same `run_at` field can also be used for delayed jobs (enqueue now, run later), depending on the producer API design.
+
+### Dead-letter queue (DLQ)
+
+A dead-letter queue is where jobs go when they cannot be successfully processed after retries.
+
+In OpenQueue:
+- DLQ jobs have `status = 'dead'`
+- `dead_at` records when the job was dead-lettered
+- `dead_reason` records why (e.g., `max_retries_exhausted` or `retry_disabled`)
+- `error_text` retains the most recent failure message
+
+DLQ behavior provides:
+- a stable terminal state for permanently failing jobs
+- better operator visibility (what failed, why, and when)
+- a place to build “requeue” or “inspect error” workflows in dashboards
 
 ---
 

@@ -18,16 +18,20 @@ OpenQueue is a hosted, Postgres-backed job queue service designed to replace Red
 - [Requirements](#requirements)
 - [Quickstart (Docker Compose)](#quickstart-docker-compose)
 - [Quickstart (Local / Virtualenv)](#quickstart-local--virtualenv)
+- [Migrations (Alembic)](#migrations-alembic)
 - [Database Schema](#database-schema)
 - [Authentication](#authentication)
+  - [Token hashing strategy (SHA vs HMAC)](#token-hashing-strategy-sha-vs-hmac)
   - [Create a User / API Token](#create-a-user--api-token)
   - [Default Admin Seed (Dev)](#default-admin-seed-dev)
 - [API Overview](#api-overview)
   - [Producer API (Clients)](#producer-api-clients)
   - [Worker API (BYOW)](#worker-api-byow)
+  - [Observability](#observability)
   - [Dashboard API](#dashboard-api)
-- [End-to-End Example (Enqueue → Lease → Ack)](#end-to-end-example-enqueue--lease--ack)
+- [Testing](#testing)
 - [Operational Notes](#operational-notes)
+- [Production Notes](#production-notes)
 - [Development Notes](#development-notes)
 - [Roadmap](#roadmap)
 - [License](#license)
@@ -40,10 +44,16 @@ OpenQueue is a hosted, Postgres-backed job queue service designed to replace Red
 - Job priorities (higher number = higher priority)
 - Multi-tenant support via `users` + API tokens
 - Worker leasing with a `lease_token`
+- Visibility-timeout recovery (re-lease expired processing jobs)
+- Lease renewal for long-running jobs (`heartbeat`)
 - `ack` / `nack` semantics
-- Basic retries (`retry_count` + `max_retries`)
+- Retry backoff via `run_at` scheduling
+- Dead-letter queue (DLQ) state (`dead`)
 - Dashboard endpoints for queue stats and job listing
 - OpenAPI/Swagger documentation
+- Prometheus metrics endpoint (`GET /metrics`)
+- Readiness endpoint (`GET /ready`)
+- Basic per-tenant rate limiting (in-memory token bucket; per-process)
 
 ---
 
@@ -51,22 +61,23 @@ OpenQueue is a hosted, Postgres-backed job queue service designed to replace Red
 
 ### Job statuses
 
-OpenQueue uses a `status` field (text) with the following common values:
+OpenQueue uses a `status` field (text) with the following values:
 
 - `pending` — queued and waiting
 - `processing` — leased by a worker
 - `completed` — successfully finished
-- `failed` — failed and no retry scheduled
+- `failed` — failed (legacy/compat; DLQ uses `dead`)
 - `cancelled` — cancelled before processing
-- `dead` — reserved for future dead-letter behavior (not fully implemented yet)
+- `dead` — dead-letter queue (retries exhausted or retry disabled)
 
 ### Lease tokens
 
-Workers claim jobs using `lease`. The server returns a `lease_token` which must be provided when acknowledging completion (`ack`) or failure (`nack`).
+Workers claim jobs using `lease`. The server returns a `lease_token` which must be provided when acknowledging completion (`ack`), failure (`nack`), or extending a lease (`heartbeat`).
 
 This prevents:
 - two workers from acking the same job
 - acking a job you didn’t lease
+- stale workers from updating a job after the lease was reassigned
 
 ---
 
@@ -89,7 +100,7 @@ Core idea: the queue is implemented using Postgres row locking (`FOR UPDATE SKIP
 
 ### Python dependencies
 
-Installed from `requirements.txt` (FastAPI, Uvicorn, asyncpg, etc).
+Installed from `requirements.txt` (FastAPI, Uvicorn, asyncpg, Prometheus client, pytest, etc).
 
 ---
 
@@ -121,9 +132,9 @@ All endpoints require:
 
 See [Authentication](#authentication).
 
-> Note: the database schema is initialized automatically on the first boot of the Postgres volume using `schema.sql`.
+> Note: If you run Postgres via Docker Compose and mount `schema.sql` into `docker-entrypoint-initdb.d/`, initialization only runs on first boot of an empty volume. For real deployments, use Alembic migrations.
 
-### Resetting the DB
+### Resetting the DB (dev only)
 
 If you changed the schema and want a clean boot:
 
@@ -157,6 +168,7 @@ Create `.env`:
 
 ```OpenQueue/README.md#L1-260
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DBNAME
+OPENQUEUE_TOKEN_HMAC_SECRET=change-me   # recommended in production
 ```
 
 Important:
@@ -170,17 +182,39 @@ uvicorn app.fastapi_app:app --reload
 
 ---
 
+## Migrations (Alembic)
+
+OpenQueue includes Alembic and an initial migration to make schema changes repeatable.
+
+### Apply migrations
+
+From the project root (with `DATABASE_URL` set):
+
+```OpenQueue/README.md#L1-260
+alembic upgrade head
+```
+
+### Create a new migration
+
+```OpenQueue/README.md#L1-260
+alembic revision -m "describe your change"
+```
+
+> Note: This project uses SQL-first migrations (no ORM autogenerate).
+
+---
+
 ## Database Schema
 
-Schema is in `schema.sql` and includes:
+Schema exists in two forms:
+- `schema.sql` for local initialization
+- Alembic migrations under `migrations/` for real deployments
 
-- `users` — tenants (each API token maps to a user)
-- `jobs` — queue items
-
-OpenQueue expects `jobs` to have leasing fields such as:
-- `locked_until`, `locked_by`, `lease_token`
-- `run_at` for “not before” scheduling
-- `started_at`, `finished_at` for timing
+OpenQueue expects `jobs` to include:
+- leasing: `locked_until`, `locked_by`, `lease_token`
+- scheduling: `run_at`
+- metadata: `started_at`, `finished_at`
+- DLQ: `dead_at`, `dead_reason`
 
 ---
 
@@ -189,16 +223,21 @@ OpenQueue expects `jobs` to have leasing fields such as:
 OpenQueue uses **API tokens**.
 
 - Clients send: `Authorization: Bearer <token>`
-- Server computes: `sha256(token)`
-- Server checks it against `users.api_token_hash`
-
-Important:
+- Server derives a lookup hash and checks it against `users.api_token_hash`
 - You **never** store the raw token in Postgres
-- You must store the hash (sha256 hex string)
+
+### Token hashing strategy (SHA vs HMAC)
+
+By default, OpenQueue uses `sha256(token)`.
+
+If `OPENQUEUE_TOKEN_HMAC_SECRET` is set, OpenQueue uses:
+- `HMAC-SHA256(secret, token)`
+
+HMAC is recommended for hosted production deployments because it reduces the risk of offline token-guessing if the database leaks.
 
 ### Create a user / API token
 
-1) Generate a token and hash:
+1) Generate a token and hash (SHA-256 example):
 
 ```OpenQueue/README.md#L1-260
 python - <<'PY'
@@ -224,67 +263,47 @@ RETURNING id, email, is_active, created_at;
 Authorization: Bearer <TOKEN>
 ```
 
+> If you enable HMAC hashing, make sure you compute and store the HMAC hash (not the plain SHA-256).
+
 ### Default admin seed (dev)
 
 If you seed a dev admin in SQL, remember:
 
 - Bearer token must be the **raw token**, not the hash.
-- Example:
-  - raw token: `oq_admin_dev`
-  - stored hash: `sha256("oq_admin_dev")`
-
-Then requests use:
-
-```OpenQueue/README.md#L1-260
-Authorization: Bearer oq_admin_dev
-```
 
 ---
 
 ## API Overview
 
-All endpoints are authenticated.
+All endpoints are authenticated unless otherwise noted.
 
 ### Producer API (Clients)
 
 #### `POST /jobs` — Enqueue job
 
 Request body:
-
 - `queue_name` (string, default: `"default"`)
 - `payload` (JSON object)
 - `priority` (int, higher = higher priority)
 - `max_retries` (int)
 
 Response:
-
 - `201 { job_id, status: "queued" }`
 
 #### `GET /jobs/{job_id}` — Job status
-
-Response:
-
-- `{ job_id, status }`
+Response: `{ job_id, status }`
 
 #### `GET /jobs/{job_id}/detail` — Job details
-
-Response:
-
-- full `JobResponse` including payload/result/error and timestamps
+Response: full `JobResponse`
 
 #### `GET /jobs` — List jobs
-
 Query:
 - `queue_name` (optional)
 - `status` (optional)
 - `limit` (default 50, max 200)
 - `offset` (default 0)
 
-Response:
-- `{ items: [...], total, limit, offset }`
-
 #### `POST /jobs/{job_id}/cancel` — Cancel job
-
 Cancels only if job is still `pending`.
 
 ---
@@ -292,8 +311,7 @@ Cancels only if job is still `pending`.
 ### Worker API (BYOW)
 
 #### `POST /queues/{queue_name}/lease` — Lease next job
-
-Request body:
+Request:
 - `worker_id` (string)
 - `lease_seconds` (int, default 30)
 
@@ -301,102 +319,114 @@ Response:
 - `null` if no job available, or:
 - `{ job, lease_token, lease_expires_at }`
 
-#### `POST /jobs/{job_id}/ack` — Acknowledge completion
+Leasing rules:
+- leases `pending` jobs where `run_at <= now()`
+- can re-lease `processing` jobs where `locked_until < now()` (visibility-timeout recovery)
 
-Request body:
-- `lease_token` (must match the lease)
+#### `POST /jobs/{job_id}/ack` — Acknowledge completion
+Request:
+- `lease_token`
 - `result` (optional JSON object)
 
-Response:
-- `{ job_id, status: "completed" }`
+Response: `{ job_id, status: "completed" }`
 
 #### `POST /jobs/{job_id}/nack` — Negative acknowledgement
-
-Request body:
+Request:
 - `lease_token`
 - `error` (string)
 - `retry` (bool, default true)
 
 Behavior:
-- If `retry=true` and retries remain: requeues job (`pending`) and increments `retry_count`
-- Otherwise: marks job `failed`
+- If retries remain: requeue to `pending` and set `run_at` into the future (exponential backoff)
+- Otherwise: move to DLQ (`dead`) and set `dead_at`/`dead_reason`
+
+#### `POST /jobs/{job_id}/heartbeat` — Extend lease
+Request:
+- `lease_token`
+- `lease_seconds` (optional)
 
 Response:
-- `{ job_id, status: "failed_or_requeued" }`
+- `{ job_id, status: "lease_extended" }`
+
+---
+
+### Observability
+
+#### `GET /metrics`
+Prometheus metrics endpoint.
+
+#### `GET /health`
+Liveness check.
+
+#### `GET /ready`
+Readiness check (DB connectivity).
 
 ---
 
 ### Dashboard API
 
 #### `GET /dashboard/queues` — Per-queue statistics
-
 Returns counts by status per queue for the authenticated user.
 
 ---
 
-## End-to-End Example (Enqueue → Lease → Ack)
+## Testing
 
-### 1) Enqueue
+### Run tests
 
-```OpenQueue/README.md#L1-260
-curl -X POST "http://127.0.0.1:8000/jobs" \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "queue_name": "default",
-    "payload": {"task": "demo", "n": 1},
-    "priority": 10,
-    "max_retries": 3
-  }'
-```
-
-### 2) Lease (worker)
+Integration tests require `DATABASE_URL` pointing to a running Postgres:
 
 ```OpenQueue/README.md#L1-260
-curl -X POST "http://127.0.0.1:8000/queues/default/lease" \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{"worker_id":"worker-1","lease_seconds":30}'
+export DATABASE_URL=postgresql://user:pass@localhost:5432/openqueue
+pytest -q
 ```
 
-Copy `job.id` and `lease_token` from the response.
-
-### 3) Ack (worker)
-
-```OpenQueue/README.md#L1-260
-curl -X POST "http://127.0.0.1:8000/jobs/<JOB_ID>/ack" \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{"lease_token":"<LEASE_TOKEN>","result":{"ok":true}}'
-```
+Notable tests:
+- concurrency leasing test ensures no duplicate leases under parallel workers.
 
 ---
 
 ## Operational Notes
 
 - **At-least-once processing**: Workers should be idempotent.
-- **Lease expiry recovery**: current implementation includes lease fields, but timed-out job recovery/re-leasing policies can be expanded.
-- **Retries**: basic requeue exists; backoff/delay can be added via `run_at`.
+- **Lease expiry recovery**: expired leases can be recovered and re-leased.
+- **Heartbeat**: required for long-running jobs to avoid re-leasing.
+- **Retries**: retries use backoff via `run_at`.
+- **DLQ**: permanent failures move to `dead`.
+
+---
+
+## Production Notes
+
+### Rate limiting / quotas
+OpenQueue includes basic in-memory rate limits for key actions. In a multi-replica deployment, replace with a distributed limiter at the API gateway or a shared store.
+
+### Metrics & logging
+- Prometheus metrics are exposed at `/metrics`.
+- Request IDs are returned as `X-Request-ID`.
+- Structured request logs include method/path/status/duration.
+
+### Background maintenance
+For retention cleanup and lease reaping at low traffic, run a maintenance process (recommended as a separate container/cronjob).
 
 ---
 
 ## Development Notes
 
-- Run formatting/linting as you prefer (not included yet).
-- Prefer adding schema changes via migrations (Alembic) in future iterations.
+- Prefer schema changes via Alembic migrations.
+- Keep queue hot paths in SQL (locking + transactional updates).
+- Avoid high-cardinality metric labels (do not label by job_id).
 
 ---
 
 ## Roadmap
 
 High-priority next steps:
-
-- Visibility timeout requeue (auto-detect expired leases)
-- Backoff strategy + delayed retries (`run_at`)
-- Dead-letter queue behavior (`dead`)
-- Admin endpoints / dashboard UI for managing users + tokens
-- Rate limiting and quotas per tenant
-- Metrics (Prometheus) + tracing
+- Global (distributed) rate limiting across replicas
+- Job attempt/audit trail table (`job_attempts`)
+- API versioning (`/v1`)
+- Maintenance runner integration as a separate service
+- Performance tuning under load (indexes + query plans)
 
 ---
 

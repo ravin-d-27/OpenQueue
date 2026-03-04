@@ -11,8 +11,6 @@ services:
       - "5432:5432"
     volumes:
       - openqueue_pgdata:/var/lib/postgresql/data
-      # Initialize schema on first boot (runs only when volume is empty)
-      - ./schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U openqueue -d openqueue"]
       interval: 5s
@@ -28,13 +26,21 @@ services:
     environment:
       # IMPORTANT: inside compose network, host is the service name "db"
       DATABASE_URL: postgresql://openqueue:openqueue_password@db:5432/openqueue
+      # Optional but recommended for production-like deployments:
+      # OPENQUEUE_TOKEN_HMAC_SECRET: change-me
     depends_on:
       db:
         condition: service_healthy
     ports:
       - "8000:8000"
+    command:
+      [
+        "sh",
+        "-c",
+        "alembic upgrade head && uvicorn app.fastapi_app:app --host 0.0.0.0 --port 8000",
+      ]
     # Uncomment for live-reload during local development:
-    # command: ["uvicorn", "app.fastapi_app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    # command: ["sh", "-c", "alembic upgrade head && uvicorn app.fastapi_app:app --host 0.0.0.0 --port 8000 --reload"]
     # volumes:
     #   - ./app:/app/app:ro
 

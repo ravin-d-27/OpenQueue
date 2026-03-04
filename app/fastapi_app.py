@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Annotated, Literal, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, Field
 
 from .auth import CurrentUser, get_current_user
@@ -13,9 +14,25 @@ from .crud import (
     get_job,
     get_job_status,
     get_queue_stats,
+    heartbeat_job,
     lease_next_job,
     list_jobs,
     nack_job,
+)
+from .metrics import (
+    JOBS_ACKED_TOTAL,
+    JOBS_CANCELLED_TOTAL,
+    JOBS_ENQUEUED_TOTAL,
+    JOBS_LEASE_EMPTY_TOTAL,
+    JOBS_LEASED_TOTAL,
+    JOBS_MOVED_TO_DLQ_TOTAL,
+    JOBS_NACKED_TOTAL,
+    LEASE_EXPIRED_RECOVERED_TOTAL,
+)
+from .middleware import (
+    PrometheusHttpMetricsMiddleware,
+    RequestIdMiddleware,
+    StructuredLoggingMiddleware,
 )
 from .models import (
     AckRequest,
@@ -26,6 +43,7 @@ from .models import (
     LeaseResponse,
     NackRequest,
 )
+from .rate_limit import DEFAULT_LIMITS, RateLimiter, RateLimitExceeded
 
 # -------------------------
 # OpenAPI / Docs Models
@@ -64,6 +82,25 @@ class NackJobResponse(BaseModel):
     )
 
 
+class HeartbeatRequest(BaseModel):
+    lease_token: str = Field(
+        ..., description="Lease token returned by the lease endpoint"
+    )
+    lease_seconds: int = Field(
+        default=30,
+        ge=1,
+        le=3600,
+        description="New lease duration (seconds) starting from now",
+    )
+
+
+class HeartbeatResponse(BaseModel):
+    job_id: str = Field(..., description="Job id (UUID as string)")
+    status: Literal["lease_extended"] = Field(
+        "lease_extended", description="Lease was successfully extended"
+    )
+
+
 class QueueStatsItem(BaseModel):
     queue_name: str
     pending: int
@@ -87,11 +124,15 @@ tags_metadata = [
     },
     {
         "name": "Workers (BYOW)",
-        "description": "Worker endpoints to lease jobs and ack/nack results. BYOW = Bring Your Own Worker.",
+        "description": "Worker endpoints to lease jobs and ack/nack/heartbeat results. BYOW = Bring Your Own Worker.",
     },
     {
         "name": "Dashboard",
         "description": "Read-only endpoints for queue statistics and listings.",
+    },
+    {
+        "name": "Observability",
+        "description": "Operational endpoints such as Prometheus metrics.",
     },
 ]
 
@@ -108,9 +149,18 @@ app = FastAPI(
         "- `lease`: atomically claims the next eligible job in a queue.\n"
         "- `ack`: completes a leased job.\n"
         "- `nack`: fails a leased job, optionally requeueing if retries remain.\n"
+        "- `heartbeat`: extends a lease for long-running jobs.\n"
     ),
     openapi_tags=tags_metadata,
 )
+
+# Middleware: request id, structured logs, and Prometheus HTTP metrics
+app.add_middleware(RequestIdMiddleware)
+app.add_middleware(StructuredLoggingMiddleware)
+app.add_middleware(PrometheusHttpMetricsMiddleware)
+
+# In-memory rate limiter (per-process). For multi-replica deployments, replace with distributed limiter.
+rate_limiter = RateLimiter(default_limits=DEFAULT_LIMITS)
 
 AuthUserDep = Annotated[CurrentUser, Depends(get_current_user)]
 
@@ -131,12 +181,38 @@ RESP_500 = {"model": ErrorResponse, "description": "Internal server error"}
 @app.get(
     "/health",
     tags=["Dashboard"],
-    summary="Health check",
-    description="Lightweight health check endpoint.",
+    summary="Health check (liveness)",
+    description="Liveness probe. Returns OK if the HTTP process is running.",
     response_model=dict,
 )
 async def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get(
+    "/metrics",
+    tags=["Observability"],
+    summary="Prometheus metrics",
+    description="Expose Prometheus metrics for OpenQueue.",
+    response_class=Response,
+)
+async def metrics() -> Response:
+    data = generate_latest()
+    return Response(content=data, media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get(
+    "/ready",
+    tags=["Dashboard"],
+    summary="Readiness check (DB connectivity)",
+    description="Readiness probe. Returns OK only if the service can reach the database.",
+    response_model=dict,
+    responses={500: RESP_500},
+)
+async def ready(user: AuthUserDep) -> dict:
+    # We currently validate DB connectivity via the auth dependency, since it performs a DB lookup.
+    # If you later want readiness without auth, add a DB ping query in CRUD and call it here.
+    return {"status": "ready"}
 
 
 # -------------------------
@@ -153,7 +229,24 @@ async def health() -> dict:
     status_code=status.HTTP_201_CREATED,
     responses={401: RESP_401, 403: RESP_403},
 )
-async def job_create(job: JobCreate, user: AuthUserDep) -> EnqueueJobResponse:
+async def job_create(
+    job: JobCreate, user: AuthUserDep, request: Request
+) -> EnqueueJobResponse:
+    # Rate limit: enqueue
+    principal = getattr(
+        request.state, "request_id", None
+    )  # fallback if auth changes; not ideal
+    # Prefer token hash principal if available in auth later; for now use user_id to avoid raw token usage.
+    principal = user["id"] if user and user.get("id") else (principal or "unknown")
+    try:
+        rate_limiter.consume(principal_key=principal, action="enqueue")
+    except RateLimitExceeded as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded",
+            headers={"Retry-After": str(int(max(1.0, e.retry_after_seconds)))},
+        )
+
     job_id = await create_job(
         user_id=user["id"],
         queue_name=job.queue_name,
@@ -161,6 +254,8 @@ async def job_create(job: JobCreate, user: AuthUserDep) -> EnqueueJobResponse:
         priority=job.priority,
         max_retries=job.max_retries,
     )
+
+    JOBS_ENQUEUED_TOTAL.labels(queue_name=job.queue_name).inc()
     return EnqueueJobResponse(job_id=str(job_id), status="queued")
 
 
@@ -211,6 +306,7 @@ async def job_get(job_id: str, user: AuthUserDep) -> JobResponse:
 )
 async def jobs_list(
     user: AuthUserDep,
+    request: Request,
     queue_name: Optional[str] = Query(default=None, description="Filter by queue name"),
     status_filter: Optional[str] = Query(
         default=None,
@@ -220,6 +316,17 @@ async def jobs_list(
     limit: int = Query(default=50, ge=1, le=200, description="Max items to return"),
     offset: int = Query(default=0, ge=0, description="Pagination offset"),
 ) -> JobListResponse:
+    # Rate limit: list jobs
+    principal = user["id"]
+    try:
+        rate_limiter.consume(principal_key=principal, action="list_jobs")
+    except RateLimitExceeded as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded",
+            headers={"Retry-After": str(int(max(1.0, e.retry_after_seconds)))},
+        )
+
     items, total = await list_jobs(
         user_id=user["id"],
         queue_name=queue_name,
@@ -250,6 +357,7 @@ async def job_cancel(job_id: str, user: AuthUserDep) -> CancelJobResponse:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Job not found or not cancellable",
         )
+    JOBS_CANCELLED_TOTAL.labels(queue_name="unknown").inc()
     return CancelJobResponse(job_id=job_id, status="cancelled")
 
 
@@ -265,7 +373,7 @@ async def job_cancel(job_id: str, user: AuthUserDep) -> CancelJobResponse:
     description=(
         "Atomically claim the next available job in a queue and return it with a lease token.\n\n"
         "If no job is available, returns `null`.\n\n"
-        "The lease token must be used for `ack`/`nack`."
+        "The lease token must be used for `ack`/`nack`/`heartbeat`."
     ),
     response_model=Optional[LeaseResponse],
     responses={401: RESP_401, 403: RESP_403, 500: RESP_500},
@@ -274,7 +382,19 @@ async def queue_lease(
     queue_name: str,
     req: LeaseRequest,
     user: AuthUserDep,
+    request: Request,
 ) -> Optional[LeaseResponse]:
+    # Rate limit: lease
+    principal = user["id"]
+    try:
+        rate_limiter.consume(principal_key=principal, action="lease")
+    except RateLimitExceeded as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded",
+            headers={"Retry-After": str(int(max(1.0, e.retry_after_seconds)))},
+        )
+
     leased = await lease_next_job(
         user_id=user["id"],
         queue_name=queue_name,
@@ -282,12 +402,12 @@ async def queue_lease(
         lease_seconds=req.lease_seconds,
     )
     if not leased:
+        JOBS_LEASE_EMPTY_TOTAL.labels(queue_name=queue_name).inc()
         return None
 
     lease_token = leased.get("lease_token")
     lease_expires_at = leased.get("locked_until")
     if not lease_token or not lease_expires_at:
-        # Should not happen; indicates schema mismatch or buggy CRUD.
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Lease created but missing lease metadata",
@@ -297,6 +417,11 @@ async def queue_lease(
     job_dict.pop("lease_token", None)
     job_dict.pop("locked_until", None)
 
+    # Best-effort: record recovery metric if lease_lost_count increased (requires that field present)
+    if leased.get("lease_lost_count"):
+        LEASE_EXPIRED_RECOVERED_TOTAL.labels(queue_name=queue_name).inc()
+
+    JOBS_LEASED_TOTAL.labels(queue_name=queue_name).inc()
     return LeaseResponse(
         job=job_dict,  # type: ignore[arg-type]
         lease_token=str(lease_token),
@@ -312,7 +437,20 @@ async def queue_lease(
     response_model=AckJobResponse,
     responses={401: RESP_401, 403: RESP_403, 409: RESP_409},
 )
-async def job_ack(job_id: str, req: AckRequest, user: AuthUserDep) -> AckJobResponse:
+async def job_ack(
+    job_id: str, req: AckRequest, user: AuthUserDep, request: Request
+) -> AckJobResponse:
+    # Rate limit: ack
+    principal = user["id"]
+    try:
+        rate_limiter.consume(principal_key=principal, action="ack")
+    except RateLimitExceeded as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded",
+            headers={"Retry-After": str(int(max(1.0, e.retry_after_seconds)))},
+        )
+
     ok = await ack_job(
         user_id=user["id"],
         job_id=job_id,
@@ -324,6 +462,7 @@ async def job_ack(job_id: str, req: AckRequest, user: AuthUserDep) -> AckJobResp
             status_code=status.HTTP_409_CONFLICT,
             detail="Job not found, not leased, or lease token mismatch",
         )
+    JOBS_ACKED_TOTAL.labels(queue_name="unknown").inc()
     return AckJobResponse(job_id=job_id, status="completed")
 
 
@@ -332,13 +471,28 @@ async def job_ack(job_id: str, req: AckRequest, user: AuthUserDep) -> AckJobResp
     tags=["Workers (BYOW)"],
     summary="Negative-acknowledge a job",
     description=(
-        "Marks a leased job as failed, optionally requeueing if retries remain.\n\n"
+        "Marks a leased job as failed. If `retry=true` and retries remain, the job is requeued "
+        "using exponential backoff via `run_at`. If retries are exhausted (or retry is disabled), "
+        "the job is moved to the DLQ (`dead`).\n\n"
         "This endpoint is used when a worker fails to process a job."
     ),
     response_model=NackJobResponse,
     responses={401: RESP_401, 403: RESP_403, 409: RESP_409},
 )
-async def job_nack(job_id: str, req: NackRequest, user: AuthUserDep) -> NackJobResponse:
+async def job_nack(
+    job_id: str, req: NackRequest, user: AuthUserDep, request: Request
+) -> NackJobResponse:
+    # Rate limit: nack
+    principal = user["id"]
+    try:
+        rate_limiter.consume(principal_key=principal, action="nack")
+    except RateLimitExceeded as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded",
+            headers={"Retry-After": str(int(max(1.0, e.retry_after_seconds)))},
+        )
+
     ok = await nack_job(
         user_id=user["id"],
         job_id=job_id,
@@ -351,7 +505,55 @@ async def job_nack(job_id: str, req: NackRequest, user: AuthUserDep) -> NackJobR
             status_code=status.HTTP_409_CONFLICT,
             detail="Job not found, not leased, or lease token mismatch",
         )
+
+    # We can't perfectly know outcome without reading job state back; record generic nack.
+    JOBS_NACKED_TOTAL.labels(queue_name="unknown", outcome="nack").inc()
+    # DLQ moves are counted inside CRUD in a future enhancement; keep metric placeholder here.
+    if not req.retry:
+        JOBS_MOVED_TO_DLQ_TOTAL.labels(
+            queue_name="unknown", reason="retry_disabled"
+        ).inc()
+
     return NackJobResponse(job_id=job_id, status="failed_or_requeued")
+
+
+@app.post(
+    "/jobs/{job_id}/heartbeat",
+    tags=["Workers (BYOW)"],
+    summary="Extend a job lease (heartbeat)",
+    description=(
+        "Extends the lease for a long-running job. Requires the current `lease_token`.\n\n"
+        "Use this periodically for jobs that take longer than the original lease duration."
+    ),
+    response_model=HeartbeatResponse,
+    responses={401: RESP_401, 403: RESP_403, 409: RESP_409},
+)
+async def job_heartbeat(
+    job_id: str, req: HeartbeatRequest, user: AuthUserDep, request: Request
+) -> HeartbeatResponse:
+    # Rate limit: heartbeat
+    principal = user["id"]
+    try:
+        rate_limiter.consume(principal_key=principal, action="heartbeat")
+    except RateLimitExceeded as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded",
+            headers={"Retry-After": str(int(max(1.0, e.retry_after_seconds)))},
+        )
+
+    ok = await heartbeat_job(
+        user_id=user["id"],
+        job_id=job_id,
+        lease_token=req.lease_token,
+        lease_seconds=req.lease_seconds,
+    )
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Job not found, not leased, or lease token mismatch",
+        )
+    return HeartbeatResponse(job_id=job_id, status="lease_extended")
 
 
 # -------------------------
@@ -367,6 +569,17 @@ async def job_nack(job_id: str, req: NackRequest, user: AuthUserDep) -> NackJobR
     response_model=list[QueueStatsItem],
     responses={401: RESP_401, 403: RESP_403},
 )
-async def dashboard_queues(user: AuthUserDep) -> list[QueueStatsItem]:
+async def dashboard_queues(user: AuthUserDep, request: Request) -> list[QueueStatsItem]:
+    # Rate limit: queue stats
+    principal = user["id"]
+    try:
+        rate_limiter.consume(principal_key=principal, action="queue_stats")
+    except RateLimitExceeded as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded",
+            headers={"Retry-After": str(int(max(1.0, e.retry_after_seconds)))},
+        )
+
     stats = await get_queue_stats(user_id=user["id"])
     return stats  # type: ignore[return-value]

@@ -1,4 +1,6 @@
 import hashlib
+import hmac
+import os
 from typing import Optional, TypedDict
 
 from fastapi import Depends
@@ -18,7 +20,32 @@ security = HTTPBearer(auto_error=True)
 
 
 def hash_api_token(token: str) -> str:
-    # store and compare only hashes
+    """
+    Derive a stable token hash for lookup in the database.
+
+    Default: SHA-256(token) as hex.
+
+    If `OPENQUEUE_TOKEN_HMAC_SECRET` is set:
+      hash = HMAC-SHA256(secret, token) as hex
+
+    Why HMAC?
+    - Prevents offline token-guessing attacks if the DB leaks (attacker can't verify guesses
+      without the server secret).
+    - Allows rotating the secret (with care) as part of operational security.
+
+    Important:
+    - Do NOT change this in production without a migration plan, because all stored
+      api_token_hash values depend on this derivation.
+    """
+    secret = os.getenv("OPENQUEUE_TOKEN_HMAC_SECRET")
+    if secret:
+        digest = hmac.new(
+            key=secret.encode("utf-8"),
+            msg=token.encode("utf-8"),
+            digestmod=hashlib.sha256,
+        ).hexdigest()
+        return digest
+
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 

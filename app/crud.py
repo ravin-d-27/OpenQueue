@@ -5,6 +5,17 @@ from typing import Any, Dict, List, Optional, Tuple
 from .database import db
 
 
+def _compute_retry_delay_seconds(retry_count: int) -> int:
+    """
+    Exponential backoff (seconds) with a cap.
+    - retry_count is the current retry_count BEFORE increment.
+    - returns delay seconds for the NEXT retry.
+    """
+    # 1, 2, 4, 8, ... seconds up to 300 seconds cap
+    base = 2 ** max(0, int(retry_count))
+    return min(base, 300)
+
+
 def _to_iso(dt: Any) -> Optional[str]:
     if dt is None:
         return None
@@ -259,7 +270,12 @@ async def lease_next_job(
                         started_at = COALESCE(started_at, NOW()),
                         locked_by = $1,
                         locked_until = NOW() + ($2::text || ' seconds')::interval,
-                        lease_token = gen_random_uuid()
+                        lease_token = gen_random_uuid(),
+                        lease_lost_count = CASE
+                            WHEN status = 'processing' AND locked_until IS NOT NULL AND locked_until < NOW()
+                            THEN lease_lost_count + 1
+                            ELSE lease_lost_count
+                        END
                     WHERE id = $3 AND user_id = $4
                     RETURNING *
                     """,
@@ -356,28 +372,90 @@ async def nack_job(
                 max_retries = int(current["max_retries"] or 0)
 
                 can_retry = bool(retry) and retry_count < max_retries
-                new_status = "pending" if can_retry else "failed"
+                backoff_seconds = _compute_retry_delay_seconds(retry_count)
 
-                await conn.execute(
-                    """
-                    UPDATE jobs
-                    SET status = $1,
-                        retry_count = retry_count + 1,
-                        error_text = $2,
-                        updated_at = NOW(),
-                        finished_at = CASE WHEN $1 = 'failed' THEN NOW() ELSE finished_at END,
-                        locked_until = NULL,
-                        locked_by = NULL,
-                        lease_token = NULL
-                    WHERE id = $3 AND user_id = $4
-                    """,
-                    new_status,
-                    error,
-                    job_id,
-                    user_id,
-                )
+                if can_retry:
+                    await conn.execute(
+                        """
+                        UPDATE jobs
+                        SET status = 'pending',
+                            retry_count = retry_count + 1,
+                            error_text = $1,
+                            run_at = NOW() + ($2::text || ' seconds')::interval,
+                            updated_at = NOW(),
+                            locked_until = NULL,
+                            locked_by = NULL,
+                            lease_token = NULL
+                        WHERE id = $3 AND user_id = $4
+                        """,
+                        error,
+                        backoff_seconds,
+                        job_id,
+                        user_id,
+                    )
+                else:
+                    await conn.execute(
+                        """
+                        UPDATE jobs
+                        SET status = 'dead',
+                            error_text = $1,
+                            dead_reason = $2,
+                            dead_at = NOW(),
+                            updated_at = NOW(),
+                            finished_at = NOW(),
+                            locked_until = NULL,
+                            locked_by = NULL,
+                            lease_token = NULL
+                        WHERE id = $3 AND user_id = $4
+                        """,
+                        error,
+                        "max_retries_exhausted"
+                        if retry_count >= max_retries
+                        else "retry_disabled",
+                        job_id,
+                        user_id,
+                    )
 
                 return True
+
+
+async def heartbeat_job(
+    user_id: str,
+    job_id: str,
+    lease_token: str,
+    lease_seconds: int = 30,
+) -> bool:
+    """
+    Extend a job lease for long-running processing.
+    Only succeeds if the job is currently processing and the lease_token matches.
+    """
+    lease_seconds = max(1, min(int(lease_seconds), 3600))
+
+    # Guard against invalid UUID strings so we return False instead of 500'ing
+    try:
+        uuid.UUID(str(lease_token))
+    except Exception:
+        return False
+
+    async with db.get_pool() as pool:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE jobs
+                SET locked_until = NOW() + ($1::text || ' seconds')::interval,
+                    updated_at = NOW()
+                WHERE id = $2
+                  AND user_id = $3
+                  AND status = 'processing'
+                  AND lease_token = $4::uuid
+                RETURNING id
+                """,
+                lease_seconds,
+                job_id,
+                user_id,
+                lease_token,
+            )
+            return bool(row)
 
 
 async def cancel_job(user_id: str, job_id: str) -> bool:
