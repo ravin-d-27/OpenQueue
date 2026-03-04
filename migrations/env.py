@@ -7,8 +7,6 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from app.settings import get_settings
-
 # Ensure the OpenQueue package root is importable when Alembic runs from different working dirs (CI/repo root).
 # This file lives at: OpenQueue/migrations/env.py
 # We add its parent directory (OpenQueue/) to sys.path so `app.*` imports work reliably.
@@ -16,6 +14,8 @@ _THIS_DIR = os.path.dirname(__file__)
 _PROJECT_ROOT = os.path.abspath(os.path.join(_THIS_DIR, ".."))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
+
+from app.settings import get_settings
 
 # Alembic Config object provides access to values within alembic.ini
 config = context.config
