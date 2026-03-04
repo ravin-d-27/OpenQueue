@@ -211,10 +211,17 @@ async def lease_next_job(
     lease_seconds: int = 30,
 ) -> Optional[Dict[str, Any]]:
     """
-    Atomically pick the next pending job and mark it processing with a lease token.
+    Atomically lease the next eligible job for a queue.
 
-    Requires schema columns:
-      - run_at, locked_until, locked_by, lease_token, started_at
+    Eligibility rules:
+    - pending jobs where run_at <= NOW()
+    - processing jobs where locked_until < NOW() (expired lease / visibility timeout recovery)
+
+    Notes:
+    - This provides "at-least-once" processing semantics. If a worker continues
+      processing after its lease expires, the job may be processed more than once.
+    - A re-leased job receives a new lease_token; stale workers will fail ack/nack
+      with a token mismatch.
     """
     lease_seconds = max(1, min(int(lease_seconds), 3600))
 
@@ -227,9 +234,14 @@ async def lease_next_job(
                     FROM jobs
                     WHERE user_id = $1
                       AND queue_name = $2
-                      AND status = 'pending'
-                      AND COALESCE(run_at, NOW()) <= NOW()
-                    ORDER BY priority DESC, created_at ASC
+                      AND (
+                        (status = 'pending' AND COALESCE(run_at, NOW()) <= NOW())
+                        OR
+                        (status = 'processing' AND locked_until IS NOT NULL AND locked_until < NOW())
+                      )
+                    ORDER BY
+                      priority DESC,
+                      created_at ASC
                     LIMIT 1
                     FOR UPDATE SKIP LOCKED
                     """,

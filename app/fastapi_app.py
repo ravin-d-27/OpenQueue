@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Annotated, Literal, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .auth import CurrentUser, get_current_user
@@ -228,7 +227,12 @@ async def jobs_list(
         limit=limit,
         offset=offset,
     )
-    return JobListResponse(items=items, total=total, limit=limit, offset=offset)
+    return JobListResponse(
+        items=[JobResponse.model_validate(item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @app.post(
@@ -284,9 +288,9 @@ async def queue_lease(
     lease_expires_at = leased.get("locked_until")
     if not lease_token or not lease_expires_at:
         # Should not happen; indicates schema mismatch or buggy CRUD.
-        return JSONResponse(
+        raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": "Lease created but missing lease metadata"},
+            detail="Lease created but missing lease metadata",
         )
 
     job_dict = dict(leased)
