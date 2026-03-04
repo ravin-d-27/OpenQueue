@@ -1,4 +1,5 @@
 import json
+import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 from .database import db
@@ -14,6 +15,23 @@ def _to_iso(dt: Any) -> Optional[str]:
         return str(dt)
 
 
+def _maybe_parse_json(value: Any) -> Any:
+    """
+    asyncpg + jsonb can sometimes return JSON as a Python dict, but depending on
+    codecs/config it may come back as a JSON string. Normalize to dict/list.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except Exception:
+            return value
+    return value
+
+
 def _row_to_job_dict(row: Any) -> Dict[str, Any]:
     """
     Convert an asyncpg.Record (or mapping) into an API-friendly dict.
@@ -23,8 +41,8 @@ def _row_to_job_dict(row: Any) -> Dict[str, Any]:
         "queue_name": row["queue_name"],
         "status": row["status"],
         "priority": row["priority"],
-        "payload": row["payload"],
-        "result": row.get("result"),
+        "payload": _maybe_parse_json(row["payload"]),
+        "result": _maybe_parse_json(row.get("result")),
         "error_text": row.get("error_text"),
         "retry_count": row.get("retry_count"),
         "max_retries": row.get("max_retries"),
@@ -248,6 +266,11 @@ async def ack_job(
     lease_token: str,
     result: Optional[Dict[str, Any]] = None,
 ) -> bool:
+    # Guard against invalid UUID strings so we return False instead of 500'ing
+    try:
+        uuid.UUID(str(lease_token))
+    except Exception:
+        return False
     """
     Complete a leased job (idempotent-ish: only succeeds if lease_token matches).
     Returns True if updated, False otherwise.
@@ -286,6 +309,11 @@ async def nack_job(
     error: str,
     retry: bool = True,
 ) -> bool:
+    # Guard against invalid UUID strings so we return False instead of 500'ing
+    try:
+        uuid.UUID(str(lease_token))
+    except Exception:
+        return False
     """
     Mark a leased job as failed, optionally requeueing if retries remain.
 

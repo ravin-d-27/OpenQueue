@@ -62,3 +62,7 @@ CREATE INDEX idx_jobs_user_queue_pending_ready
 CREATE INDEX idx_jobs_processing_timed_out
     ON jobs(user_id, queue_name, locked_until)
     WHERE status = 'processing';
+
+INSERT INTO users (email, api_token_hash, is_active)
+VALUES ('admin@openqueue.local', 'a8000977a3ac8b4524c6ccd95a9935bc34b3be9fae30baaf15e5b103e293398a', TRUE)
+ON CONFLICT (api_token_hash) DO NOTHING;

@@ -1,0 +1,42 @@
+services:
+  db:
+    image: postgres:16
+    container_name: openqueue-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: openqueue
+      POSTGRES_USER: openqueue
+      POSTGRES_PASSWORD: openqueue_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - openqueue_pgdata:/var/lib/postgresql/data
+      # Initialize schema on first boot (runs only when volume is empty)
+      - ./schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openqueue -d openqueue"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: openqueue-api
+    restart: unless-stopped
+    environment:
+      # IMPORTANT: inside compose network, host is the service name "db"
+      DATABASE_URL: postgresql://openqueue:openqueue_password@db:5432/openqueue
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    # Uncomment for live-reload during local development:
+    # command: ["uvicorn", "app.fastapi_app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    # volumes:
+    #   - ./app:/app/app:ro
+
+volumes:
+  openqueue_pgdata:
