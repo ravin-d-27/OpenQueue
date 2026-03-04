@@ -12,6 +12,10 @@ This migration creates:
 Notes:
 - Requires the pgcrypto extension for gen_random_uuid().
 - Uses explicit SQL to keep parity with the project's SQL-first approach.
+
+Dev seed:
+- Inserts a default admin user with a known token hash for local development.
+- IMPORTANT: this is intended for development environments only. Remove/replace for production.
 """
 
 from __future__ import annotations
@@ -40,6 +44,22 @@ def upgrade() -> None:
             created_at TIMESTAMP NOT NULL DEFAULT NOW(),
             last_seen_at TIMESTAMP
         );
+        """
+    )
+
+    # DEV ONLY: seed a default admin user so the API works out-of-the-box locally.
+    # The Bearer token is the *raw token*, not the hash.
+    #
+    # Raw token (dev):    oq_admin_dev
+    # Stored hash (sha256): a8000977a3ac8b4524c6ccd95a9935bc34b3be9fae30baaf15e5b103e293398a
+    #
+    # If you enable OPENQUEUE_TOKEN_HMAC_SECRET, this seed will NOT match (you'll need to
+    # insert an HMAC-derived hash instead).
+    op.execute(
+        """
+        INSERT INTO users (email, api_token_hash, is_active)
+        VALUES ('admin@openqueue.local', 'a8000977a3ac8b4524c6ccd95a9935bc34b3be9fae30baaf15e5b103e293398a', TRUE)
+        ON CONFLICT (api_token_hash) DO NOTHING;
         """
     )
 

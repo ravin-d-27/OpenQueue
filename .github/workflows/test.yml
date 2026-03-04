@@ -1,0 +1,57 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: openqueue
+          POSTGRES_USER: openqueue
+          POSTGRES_PASSWORD: openqueue_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U openqueue -d openqueue"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 30
+
+    env:
+      DATABASE_URL: postgresql://openqueue:openqueue_password@127.0.0.1:5432/openqueue
+      OPENQUEUE_ENV: test
+      OPENQUEUE_TOKEN_HMAC_SECRET: openqueue-test-secret
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: OpenQueue/requirements.txt
+
+      - name: Install dependencies
+        working-directory: OpenQueue
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run migrations
+        working-directory: OpenQueue
+        run: |
+          alembic upgrade head
+
+      - name: Run tests
+        working-directory: OpenQueue
+        run: |
+          pytest -q

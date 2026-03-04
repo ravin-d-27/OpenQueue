@@ -2,6 +2,19 @@
 
 OpenQueue is a hosted, Postgres-backed job queue service designed to replace Redis-backed queues for many workloads.
 
+## Default dev admin token (development only)
+
+By default (in local/dev), OpenQueue seeds an admin user in the database with the following API token:
+
+- **Bearer token:** `oq_live_qXxA5liMxzRhz3uVTFYziaQSrw8tB05y2hU5O7VivyA`
+
+Use it like:
+
+- `Authorization: Bearer oq_live_qXxA5liMxzRhz3uVTFYziaQSrw8tB05y2hU5O7VivyA`
+
+You can rotate/change this later by inserting a new row in `users` (with the correct token hash) and disabling/removing this seed in production.
+
+
 - **Producers** enqueue jobs via a REST API.
 - **Workers (BYOW: Bring Your Own Worker)** lease jobs for processing and report completion/failure with `ack`/`nack`.
 - **Multi-tenant by design**: every job belongs to a user, identified via API token authentication.
