@@ -1,6 +1,5 @@
 import hashlib
 import hmac
-import os
 from typing import Optional, TypedDict
 
 from fastapi import Depends
@@ -8,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from starlette.exceptions import HTTPException
 
 from .database import db
+from .settings import get_settings
 
 
 class CurrentUser(TypedDict):
@@ -25,7 +25,7 @@ def hash_api_token(token: str) -> str:
 
     Default: SHA-256(token) as hex.
 
-    If `OPENQUEUE_TOKEN_HMAC_SECRET` is set:
+    If `settings.token_hmac_secret` is set:
       hash = HMAC-SHA256(secret, token) as hex
 
     Why HMAC?
@@ -37,7 +37,8 @@ def hash_api_token(token: str) -> str:
     - Do NOT change this in production without a migration plan, because all stored
       api_token_hash values depend on this derivation.
     """
-    secret = os.getenv("OPENQUEUE_TOKEN_HMAC_SECRET")
+    settings = get_settings()
+    secret = settings.token_hmac_secret
     if secret:
         digest = hmac.new(
             key=secret.encode("utf-8"),

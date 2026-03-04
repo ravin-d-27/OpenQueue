@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import os
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+
+from app.settings import get_settings
 
 # Alembic Config object provides access to values within alembic.ini
 config = context.config
@@ -17,7 +18,7 @@ if config.config_file_name is not None:
 
 def _get_database_url() -> str:
     """
-    Load the database URL from the environment.
+    Load the database URL from typed settings.
 
     Expected:
       DATABASE_URL=postgresql://user:pass@host:5432/dbname
@@ -30,11 +31,8 @@ def _get_database_url() -> str:
     'postgresql://', we rewrite it to 'postgresql+psycopg://' so SQLAlchemy uses
     the psycopg v3 dialect (instead of trying psycopg2).
     """
-    url = os.getenv("DATABASE_URL")
-    if not url:
-        raise RuntimeError(
-            "DATABASE_URL is not set. Export DATABASE_URL or provide it via .env."
-        )
+    settings = get_settings()
+    url = settings.database_url
 
     # Force SQLAlchemy to use psycopg v3
     if url.startswith("postgresql://"):

@@ -1,24 +1,47 @@
-import os
+from __future__ import annotations
+
 from contextlib import asynccontextmanager
+from typing import Optional
 
 import asyncpg
-from dotenv import load_dotenv
 
-load_dotenv()
-
-
-DATABASE_URL = os.getenv("DATABASE_URL")
+from .settings import get_settings
 
 
 class Database:
     def __init__(self):
-        self.pool = None
+        self.pool: Optional[asyncpg.Pool] = None
+
+    async def _ensure_pool(self) -> asyncpg.Pool:
+        """
+        Lazily create and return the asyncpg pool.
+        """
+        if self.pool is not None:
+            return self.pool
+
+        settings = get_settings()
+
+        self.pool = await asyncpg.create_pool(
+            settings.database_url,
+            min_size=settings.db_pool_min_size,
+            max_size=settings.db_pool_max_size,
+        )
+
+        # Optional: set statement_timeout for all connections in the pool.
+        # This prevents runaway queries from hanging indefinitely.
+        if settings.db_statement_timeout_ms:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "SET statement_timeout = $1",
+                    int(settings.db_statement_timeout_ms),
+                )
+
+        return self.pool
 
     @asynccontextmanager
     async def get_pool(self):
-        if self.pool is None:
-            self.pool = await asyncpg.create_pool(DATABASE_URL)
-        yield self.pool
+        pool = await self._ensure_pool()
+        yield pool
 
 
 db = Database()
