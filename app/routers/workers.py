@@ -11,8 +11,15 @@ from ..deps import (
     RateLimitLeaseDep,
     RateLimitNackDep,
 )
-from ..models import AckRequest, LeaseRequest, LeaseResponse, NackRequest
-from ..services.jobs_service import LeaseResult, ack, heartbeat, lease_next, nack
+from ..models import (
+    AckRequest,
+    HeartbeatRequest,
+    JobResponse,
+    LeaseRequest,
+    LeaseResponse,
+    NackRequest,
+)
+from ..services.jobs_service import ack, heartbeat, lease_next, nack
 
 router = APIRouter(tags=["Workers (BYOW)"])
 
@@ -45,12 +52,11 @@ async def lease_endpoint(
     if res is None:
         return None
 
-    # LeaseResponse expects: { job, lease_token, lease_expires_at }
-    return {
-        "job": res.job,
-        "lease_token": res.lease_token,
-        "lease_expires_at": res.lease_expires_at,
-    }
+    return LeaseResponse(
+        job=JobResponse.model_validate(res.job),
+        lease_token=res.lease_token,
+        lease_expires_at=res.lease_expires_at,
+    )
 
 
 @router.post(
@@ -121,25 +127,15 @@ async def nack_endpoint(
 )
 async def heartbeat_endpoint(
     job_id: str,
-    req: dict,
+    req: HeartbeatRequest,
     user: AuthUserDep,
     _: RateLimitHeartbeatDep,
 ) -> dict:
-    # Keep the handler tolerant even if models change; validate minimal fields here.
-    lease_token = (req or {}).get("lease_token")
-    lease_seconds = (req or {}).get("lease_seconds", 30)
-
-    if not lease_token:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="lease_token is required",
-        )
-
     ok = await heartbeat(
         user_id=user["id"],
         job_id=job_id,
-        lease_token=str(lease_token),
-        lease_seconds=int(lease_seconds),
+        lease_token=req.lease_token,
+        lease_seconds=req.lease_seconds,
     )
     if not ok:
         raise HTTPException(

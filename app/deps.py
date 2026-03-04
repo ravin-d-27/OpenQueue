@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+from typing import Annotated, Optional
+
+from fastapi import Depends, HTTPException, Request, status
+
+from .auth import CurrentUser, get_current_user
+from .rate_limit import DEFAULT_LIMITS, RateLimiter, RateLimitExceeded
+
 """
 Shared FastAPI dependencies and helpers.
 
@@ -16,13 +23,6 @@ Notes:
 - The rate limiter is currently in-memory (per-process). In multi-replica
   deployments you should replace/enhance it with gateway or distributed limiting.
 """
-
-from typing import Annotated, Optional
-
-from fastapi import Depends, HTTPException, Request, status
-
-from .auth import CurrentUser, get_current_user
-from .rate_limit import DEFAULT_LIMITS, RateLimiter, RateLimitExceeded
 
 # -------------------------
 # Core dependencies

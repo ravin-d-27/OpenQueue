@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from fastapi import FastAPI
 
@@ -23,7 +22,7 @@ def create_app(*, title: str = "OpenQueue", version: str = "0.0.1") -> FastAPI:
     - Include API routers
 
     Notes:
-    - This keeps `fastapi_app.py` (or `main.py`) minimal and makes testing easier.
+    - This keeps `fastapi_app.py` minimal and makes testing easier.
     - Router modules are responsible for their own paths and tags.
     """
     tags_metadata = [

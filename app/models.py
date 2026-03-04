@@ -108,6 +108,22 @@ class LeaseResponse(BaseModel):
     )
 
 
+class HeartbeatRequest(BaseModel):
+    """
+    Worker heartbeat to extend a lease for long-running jobs.
+    """
+
+    lease_token: str = Field(
+        ..., description="Lease token returned by the lease endpoint"
+    )
+    lease_seconds: int = Field(
+        default=30,
+        ge=1,
+        le=3600,
+        description="New lease duration (seconds) starting from now",
+    )
+
+
 class AckRequest(BaseModel):
     """
     Worker acknowledges completion of a job.

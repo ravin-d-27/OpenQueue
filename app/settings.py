@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from functools import lru_cache
+from typing import Literal, Optional
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 """
 Centralized typed configuration for OpenQueue.
 
@@ -28,12 +34,6 @@ Notes
   module, add it to `requirements.txt`:
       pydantic-settings>=2.0
 """
-
-from functools import lru_cache
-from typing import Literal, Optional
-
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
 EnvName = Literal["dev", "test", "prod"]
 
@@ -180,5 +180,18 @@ def get_settings() -> Settings:
     Return a cached Settings instance.
 
     Using an LRU cache avoids re-reading env and re-parsing settings for every import.
+
+    If DATABASE_URL is missing, raise a clear RuntimeError (instead of a less clear
+    validation error message), which is friendlier for new contributors and CI logs.
     """
-    return Settings()
+    try:
+        # Type-checkers (depending on configuration) may incorrectly require DATABASE_URL
+        # as a constructor argument. At runtime, pydantic-settings loads it from env/.env.
+        return Settings()  # type: ignore[call-arg]
+    except Exception as e:
+        # Most common configuration error:
+        # - DATABASE_URL missing (required)
+        raise RuntimeError(
+            "OpenQueue configuration error: DATABASE_URL is not set. "
+            "Set DATABASE_URL in your environment or in a local .env file."
+        ) from e

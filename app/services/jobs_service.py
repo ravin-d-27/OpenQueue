@@ -1,5 +1,20 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, Tuple
+
+from .. import crud
+from ..metrics import (
+    JOBS_ACKED_TOTAL,
+    JOBS_CANCELLED_TOTAL,
+    JOBS_ENQUEUED_TOTAL,
+    JOBS_LEASE_EMPTY_TOTAL,
+    JOBS_LEASED_TOTAL,
+    JOBS_MOVED_TO_DLQ_TOTAL,
+    JOBS_NACKED_TOTAL,
+    LEASE_EXPIRED_RECOVERED_TOTAL,
+)
+
 """
 Jobs service layer.
 
@@ -24,21 +39,6 @@ Notes:
 - We avoid high-cardinality metric labels (never label by job_id/lease_token/user).
 - queue_name may still be high-cardinality in some deployments. Use carefully.
 """
-
-from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
-
-from .. import crud
-from ..metrics import (
-    JOBS_ACKED_TOTAL,
-    JOBS_CANCELLED_TOTAL,
-    JOBS_ENQUEUED_TOTAL,
-    JOBS_LEASE_EMPTY_TOTAL,
-    JOBS_LEASED_TOTAL,
-    JOBS_MOVED_TO_DLQ_TOTAL,
-    JOBS_NACKED_TOTAL,
-    LEASE_EXPIRED_RECOVERED_TOTAL,
-)
 
 
 @dataclass(frozen=True)
