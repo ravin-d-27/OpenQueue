@@ -6,17 +6,15 @@ OpenQueue is a hosted, Postgres‑backed job queue service designed to replace R
 - **Workers (BYOW: Bring Your Own Worker)** lease jobs for processing and report completion/failure with `ack`/`nack`.
 - **Multi‑tenant by design**: every job belongs to a user, identified via API token authentication.
 
-> Status: early‑stage but functional. Contributions welcome.
+By default (in local/dev), OpenQueue seeds an admin user in the database with the following API token:
 
----
+- **Bearer token:** `oq_live_qXxA5liMxzRhz3uVTFYziaQSrw8tB05y2hU5O7VivyA`
 
-### Where to learn more
+Use it like:
 
-- **Beginner‑friendly walkthrough of the codebase**: see `BEGINNER_GUIDE.md`.
-- **Deep conceptual + production docs**: see `Concept.md`.
-- **API details**: use the interactive docs at `/docs` once the app is running.
+- `Authorization: Bearer oq_live_qXxA5liMxzRhz3uVTFYziaQSrw8tB05y2hU5O7VivyA`
 
-This `README` focuses on **how to run the project** and the minimal context you need to get started quickly.
+You can rotate/change this later by inserting a new row in `users` (with the correct token hash) and disabling/removing this seed in production.
 
 ---
 
