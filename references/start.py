@@ -146,7 +146,7 @@ def example_check_status():
 
         # --- Get full job details ---
         job = client.get_job(job_id)
-        print(f"\nJob Details:")
+        print("\nJob Details:")
         print(f"  ID: {job.id}")
         print(f"  Queue: {job.queue_name}")
         print(f"  Status: {job.status}")
@@ -356,7 +356,6 @@ def example_worker_with_heartbeat():
         worker_id = "worker-001"
         queue_name = "long-running"
         lease_seconds = 30
-        heartbeat_interval = 10  # Send heartbeat every 10 seconds
 
         # --- Lease the job ---
         leased = client.lease(

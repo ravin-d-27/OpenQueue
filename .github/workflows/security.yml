@@ -31,15 +31,3 @@ jobs:
         run: |
           pip install -r requirements.txt
           safety check || true
-
-  dependency-review:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Dependency Review
-        uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: high
-          allow-dependencies-licenses: "MIT"

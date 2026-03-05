@@ -26,7 +26,7 @@ def heartbeat_loop(job_id: str, lease_token: str, interval: int = 10):
             if success:
                 print(f"Heartbeat sent for job {job_id}")
             else:
-                print(f"Failed to send heartbeat (job may no longer be leased)")
+                print("Failed to send heartbeat (job may no longer be leased)")
                 break
         except Exception as e:
             print(f"Heartbeat error: {e}")
@@ -61,7 +61,7 @@ while True:
 
         try:
             # Simulate long-running task
-            print(f"Processing long-running job (will take ~60 seconds)...")
+            print("Processing long-running job (will take ~60 seconds)...")
             time.sleep(60)
 
             # Complete the job

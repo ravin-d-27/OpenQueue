@@ -108,7 +108,7 @@ class TestWorkerAPI:
         queue = f"worker-test-{time.time()}"
         
         # Enqueue a job
-        job_id = client.enqueue(queue_name=queue, payload={"task": "process"})
+        _job_id = client.enqueue(queue_name=queue, payload={"task": "process"})
         
         # Lease the job
         leased = client.lease(queue_name=queue, worker_id="test-worker")
@@ -129,7 +129,7 @@ class TestWorkerAPI:
     def test_lease_and_nack_with_retry(self, client):
         """Test nack with retry requeues job."""
         queue = f"nack-test-{time.time()}"
-        job_id = client.enqueue(queue_name=queue, payload={"task": "fail"})
+        _job_id = client.enqueue(queue_name=queue, payload={"task": "fail"})
         
         leased = client.lease(queue_name=queue, worker_id="test-worker")
         assert leased is not None
@@ -149,7 +149,7 @@ class TestWorkerAPI:
     def test_lease_and_nack_no_retry(self, client):
         """Test nack without retry moves to dead."""
         queue = f"nack-no-retry-{time.time()}"
-        job_id = client.enqueue(
+        _job_id = client.enqueue(
             queue_name=queue,
             payload={"task": "fail"},
             max_retries=0,
@@ -173,7 +173,7 @@ class TestWorkerAPI:
     def test_heartbeat(self, client):
         """Test heartbeat extends lease."""
         queue = f"heartbeat-test-{time.time()}"
-        job_id = client.enqueue(queue_name=queue, payload={"task": "long"})
+        _job_id = client.enqueue(queue_name=queue, payload={"task": "long"})
         
         leased = client.lease(queue_name=queue, worker_id="test-worker")
         assert leased is not None
@@ -185,7 +185,7 @@ class TestWorkerAPI:
     def test_invalid_lease_token(self, client):
         """Test invalid lease token fails."""
         queue = f"invalid-test-{time.time()}"
-        job_id = client.enqueue(queue_name=queue, payload={"task": "test"})
+        _job_id = client.enqueue(queue_name=queue, payload={"task": "test"})
         
         leased = client.lease(queue_name=queue, worker_id="test-worker")
         assert leased is not None
