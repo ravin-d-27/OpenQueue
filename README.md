@@ -18,6 +18,344 @@ You can rotate/change this later by inserting a new row in `users` (with the cor
 
 ---
 
+## When to Use OpenQueue vs Redis
+
+### Use OpenQueue When:
+
+| Scenario | Why OpenQueue |
+|----------|---------------|
+| **You need durability and inspectability** | Jobs are rows in Postgres - query, debug, and audit with standard SQL |
+| **You already use Postgres** | No additional infrastructure - fewer moving pieces |
+| **Building a multi-tenant SaaS** | Built-in tenant isolation with API tokens |
+| **Compliance/audit requirements** | Job history in relational DB, can join with other tables |
+| **Simpler operations** | One database to manage instead of Redis + queue patterns |
+| **Medium throughput needs** | 100s-1000s jobs/sec is manageable with proper indexing |
+
+### Use Redis When:
+
+| Scenario | Why Redis |
+|----------|-----------|
+| **Ultra-low latency required** | In-memory, sub-millisecond operations |
+| **Very high throughput** | 10,000+ jobs/sec |
+| **Real-time caching** | Cache-heavy workloads |
+| **Pub/Sub patterns** | Real-time messaging between services |
+| **Existing Redis infrastructure** | Already mature ops tooling |
+
+### Example Decision:
+
+```python
+# ✅ Use OpenQueue for: Processing user signups
+# - Need to audit/track each signup attempt
+# - Medium volume (100 signups/min)
+# - Need retry logic for failed signups
+# - Want dashboard visibility into queue depth
+
+job_id = client.enqueue(
+    queue_name="user-signups",
+    payload={"user_id": 123, "email": "user@example.com"}
+)
+
+# ⚡ Use Redis for: Caching user sessions
+# - Microsecond latency needed
+# - Ephemeral data
+# - High volume
+redis.set(f"session:{user_id}", data, ex=3600)
+```
+
+---
+
+## Why PostgreSQL Schema?
+
+We chose PostgreSQL with this specific schema design for several reasons:
+
+### 1. Single Source of Truth
+
+```sql
+-- All job state in one place
+jobs (
+    id, user_id, queue_name, payload, status,
+    priority, retry_count, max_retries, run_at,
+    locked_until, locked_by, lease_token,
+    result, error_text, dead_at, dead_reason
+)
+```
+
+**Why:** No need for separate "queue store" + "result store" + "retry store". Everything is in one table.
+
+### 2. JSONB for Flexible Payloads
+
+```sql
+payload JSONB NOT NULL,    -- Flexible job data
+result JSONB,              -- Flexible result data
+```
+
+**Why:**
+- Store any JSON structure without schema changes
+- Can query inside JSON with Postgres operators
+- Efficient binary storage
+
+### 3. Visibility Timeout via `locked_until`
+
+```sql
+locked_until TIMESTAMP,    -- When lease expires
+lease_token UUID,          -- Prevents stale updates
+```
+
+**Why:**
+- Workers crash? Job auto-recovers when `locked_until < NOW()`
+- No need for external "stuck job" detection
+- Lease tokens prevent zombie workers from ack/nack
+
+### 4. Scheduling with `run_at`
+
+```sql
+run_at TIMESTAMP NOT NULL DEFAULT NOW(),
+```
+
+**Why:**
+- Delayed jobs: `run_at = NOW() + 1 hour`
+- Retry backoff: `run_at = NOW() + exponential_backoff`
+- Single field handles both cases
+
+### 5. Dead Letter Queue (DLQ)
+
+```sql
+status = 'dead',
+dead_at TIMESTAMP,
+dead_reason TEXT,
+```
+
+**Why:**
+- Permanent failures don't block the queue
+- Debug: `SELECT * FROM jobs WHERE status = 'dead'`
+- Can build "requeue" UI from DLQ
+
+### 6. Multi-Tenancy with `user_id`
+
+```sql
+user_id UUID REFERENCES users(id) ON DELETE CASCADE
+```
+
+**Why:**
+- Complete tenant isolation
+- Row-level security
+- Per-tenant queue statistics
+
+---
+
+## Real-World Use Cases
+
+### 1. Email Processing Pipeline
+
+```
+User Action → OpenQueue → Worker → Send Email → ACK
+```
+
+```python
+# Producer: User registers
+client.enqueue(
+    queue_name="welcome-emails",
+    payload={"user_id": 123, "template": "welcome"}
+)
+
+# Worker: Processes emails
+while True:
+    job = client.lease("welcome-emails", "email-worker-1")
+    send_email(job.payload["template"], job.payload["user_id"])
+    client.ack(job.id, lease_token)
+```
+
+**Why this pattern:**
+- Decouple user signup (fast) from email sending (slow)
+- Retry failed sends automatically
+- Don't lose emails if email service is down
+
+### 2. Background Data Processing
+
+```
+Upload CSV → Enqueue row processing jobs → Multiple Workers → Results
+```
+
+```python
+# Producer: Upload handler
+for row in csv_reader:
+    client.enqueue(
+        queue_name="process-rows",
+        payload={"row_id": row.id, "data": row.data}
+    )
+
+# Workers: Process in parallel
+job = client.lease("process-rows", "worker-1")
+process_row(job.payload)
+client.ack(job.id, lease_token, result={"processed": True})
+```
+
+**Why this pattern:**
+- Handle large files without timeout
+- Parallel processing scales automatically
+- Failed rows retry without blocking others
+
+### 3. Event-Driven Architecture (EDA)
+
+OpenQueue is ideal for EDA workloads where you need **at-least-once delivery**:
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Service A │────▶│  OpenQueue  │────▶│  Service B  │
+│  (Producer) │     │   (Queue)   │     │  (Worker)   │
+└─────────────┘     └─────────────┘     └─────────────┘
+```
+
+#### Example: Order Processing Pipeline
+
+```python
+# Service A: Order Service (Producer)
+@app.post("/orders")
+async def create_order(order: Order):
+    # Save order first
+    db.save(order)
+    
+    # Queue processing - don't block user response
+    openqueue.enqueue(
+        queue_name="order-processing",
+        payload={
+            "order_id": order.id,
+            "customer_email": order.email,
+            "items": order.items
+        }
+    )
+    
+    return {"order_id": order.id, "status": "processing"}
+```
+
+```python
+# Service B: Notification Worker
+while True:
+    job = openqueue.lease("order-processing", "notification-worker")
+    
+    # Send notification
+    try:
+        send_notification(
+            to=job.payload["customer_email"],
+            template="order_confirmed",
+            data=job.payload
+        )
+        openqueue.ack(job.id, job.lease_token)
+    except Exception as e:
+        # Retry with backoff
+        openqueue.nack(job.id, job.lease_token, error=str(e))
+```
+
+#### Example: EDA Event Handlers
+
+```python
+# Event: Payment Completed
+client.enqueue(
+    queue_name="payment-events",
+    payload={
+        "event_type": "payment.completed",
+        "order_id": "12345",
+        "amount": 99.99,
+        "timestamp": "2026-03-05T10:00:00Z"
+    }
+)
+
+# Worker 1: Update inventory
+client.enqueue(
+    queue_name="inventory-events", 
+    payload={"event": "payment.completed", "order_id": "12345"}
+)
+
+# Worker 2: Send receipt
+client.enqueue(
+    queue_name="receipt-events",
+    payload={"event": "payment.completed", "order_id": "12345"}
+)
+
+# Worker 3: Update analytics
+client.enqueue(
+    queue_name="analytics-events",
+    payload={"event": "payment.completed", "order_id": "12345"}
+)
+```
+
+**Why OpenQueue for EDA:**
+
+| EDA Requirement | OpenQueue Feature |
+|-----------------|-------------------|
+| **Decouple services** | Async job processing |
+| **Handle bursts** | Queue absorbs traffic spikes |
+| **Reliability** | Visibility timeout + retries |
+| **Ordering** | Priority + FIFO within priority |
+| **Debugging** | Query job history in SQL |
+| **Multi-tenant** | Built-in tenant isolation |
+
+### 4. Webhooks & External APIs
+
+```python
+# Producer: User triggers action
+client.enqueue(
+    queue_name="webhook-delivery",
+    payload={
+        "url": "https://example.com/webhook",
+        "event": "user.created",
+        "data": user_data
+    },
+    max_retries=5
+)
+```
+
+**Why:**
+- External APIs may be slow/unavailable
+- Retry with exponential backoff
+- Don't block user requests
+
+### 5. Scheduled Tasks
+
+```python
+# Schedule for later
+import datetime
+run_at = (datetime.datetime.utcnow() + datetime.timedelta(hours=1)).isoformat()
+
+client.enqueue(
+    queue_name="daily-reports",
+    payload={"report_type": "sales", "date": "2026-03-05"},
+    run_at=f"{run_at}Z"
+)
+```
+
+**Why:**
+- No cron needed - OpenQueue handles scheduling
+- Missed runs? Job sits in queue until processed
+- Can pause/resume by changing `run_at`
+
+---
+
+## The Producer-Consumer Pattern
+
+The producer-consumer pattern is fundamental to OpenQueue:
+
+```
+Producer (enqueue)    →    Queue    →    Consumer (lease + process)
+     │                                  │
+     │  1. Creates work                  │  3. Claims work
+     │  2. Defines what to do            │  4. Does the work
+     │                                   │  5. Reports success/failure
+     ▼                                   ▼
+  Fast response                     Scalable workers
+  to caller
+```
+
+### Why This Pattern Works:
+
+1. **Decoupling**: Producers don't wait for work to complete
+2. **Scalability**: Add workers as load increases
+3. **Reliability**: Jobs persist even if workers crash
+4. **Resilience**: Retries handle transient failures
+5. **Visibility**: Query queue state for debugging
+
+---
+
 ### Features (high level)
 
 - PostgreSQL‑backed job storage (JSONB payload/result).

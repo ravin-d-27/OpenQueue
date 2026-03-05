@@ -38,6 +38,8 @@ class OpenQueue:
         api_token: str,
         timeout: float = 30.0,
         max_retries: int = 3,
+        max_connections: int = 10,
+        max_keepalive_connections: int = 5,
     ):
         """
         Initialize the OpenQueue client.
@@ -47,6 +49,8 @@ class OpenQueue:
             api_token: Your API token for authentication
             timeout: Request timeout in seconds (default: 30)
             max_retries: Number of retries for transient errors (default: 3)
+            max_connections: Maximum number of connections in the pool (default: 10)
+            max_keepalive_connections: Maximum keepalive connections (default: 5)
         """
         self.base_url = base_url.rstrip("/")
         self.api_token = api_token
@@ -56,6 +60,10 @@ class OpenQueue:
         self._client = httpx.Client(
             base_url=self.base_url,
             timeout=httpx.Timeout(timeout),
+            limits=httpx.Limits(
+                max_connections=max_connections,
+                max_keepalive_connections=max_keepalive_connections,
+            ),
             headers={
                 "Authorization": f"Bearer {api_token}",
                 "Content-Type": "application/json",
@@ -97,6 +105,8 @@ class OpenQueue:
             raise JobNotFoundError("Job not found")
         if response.status_code == 409:
             raise LeaseTokenError("Lease token mismatch or job not in processing state")
+        if response.status_code >= 500:
+            raise OpenQueueError(f"Server error: {response.status_code} - {response.text[:100]}")
         if response.status_code == 400 and "lease" in response.text.lower():
             raise LeaseTokenError("Invalid lease token")
 
@@ -111,6 +121,7 @@ class OpenQueue:
         payload: Dict[str, Any],
         priority: int = 0,
         max_retries: int = 3,
+        run_at: Optional[str] = None,
     ) -> str:
         """
         Enqueue a new job.
@@ -120,6 +131,7 @@ class OpenQueue:
             payload: The job payload (any JSON-serializable dict)
             priority: Job priority (higher = higher priority, default: 0)
             max_retries: Maximum number of retries on failure (default: 3)
+            run_at: Schedule job to run at specific time (ISO 8601 datetime string, e.g., "2024-01-01T12:00:00Z")
 
         Returns:
             The job ID
@@ -130,8 +142,44 @@ class OpenQueue:
             "priority": priority,
             "max_retries": max_retries,
         }
+        if run_at:
+            data["run_at"] = run_at.replace("Z", "+00:00")
+
         result = self._request("POST", "/jobs", json=data)
         return result["job_id"]
+
+    def enqueue_batch(
+        self,
+        jobs: List[Dict[str, Any]],
+    ) -> List[str]:
+        """
+        Enqueue multiple jobs in a single request for better performance.
+
+        Args:
+            jobs: List of job dictionaries. Each dict should have:
+                - queue_name: str (required)
+                - payload: Dict[str, Any] (required)
+                - priority: int (optional, default: 0)
+                - max_retries: int (optional, default: 3)
+                - run_at: str (optional, ISO 8601 datetime)
+
+        Returns:
+            List of job IDs in the same order as input jobs
+        """
+        formatted_jobs = []
+        for job in jobs:
+            formatted_job = {
+                "queue_name": job["queue_name"],
+                "payload": job["payload"],
+                "priority": job.get("priority", 0),
+                "max_retries": job.get("max_retries", 3),
+            }
+            if job.get("run_at"):
+                formatted_job["run_at"] = job["run_at"].replace("Z", "+00:00")
+            formatted_jobs.append(formatted_job)
+
+        result = self._request("POST", "/jobs/batch", json={"jobs": formatted_jobs})
+        return result["job_ids"]
 
     def get_status(self, job_id: str) -> str:
         """

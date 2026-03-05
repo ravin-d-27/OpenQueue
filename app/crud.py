@@ -1,5 +1,6 @@
 import json
 import uuid
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from .database import db
@@ -74,22 +75,98 @@ async def create_job(
     payload: Dict[str, Any],
     priority: int = 0,
     max_retries: int = 3,
+    run_at: Optional[str] = None,
 ) -> str:
+    run_at_dt = None
+    if run_at:
+        run_at_dt = datetime.fromisoformat(run_at.replace("Z", "+00:00")).replace(tzinfo=None)
+
     async with db.get_pool() as pool:
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO jobs (user_id, queue_name, payload, priority, max_retries)
-                VALUES ($1, $2, $3::jsonb, $4, $5)
-                RETURNING id
-                """,
-                user_id,
-                queue_name,
-                json.dumps(payload),
-                priority,
-                max_retries,
-            )
+            if run_at_dt:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO jobs (user_id, queue_name, payload, priority, max_retries, run_at)
+                    VALUES ($1, $2, $3::jsonb, $4, $5, $6)
+                    RETURNING id
+                    """,
+                    user_id,
+                    queue_name,
+                    json.dumps(payload),
+                    priority,
+                    max_retries,
+                    run_at_dt,
+                )
+            else:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO jobs (user_id, queue_name, payload, priority, max_retries)
+                    VALUES ($1, $2, $3::jsonb, $4, $5)
+                    RETURNING id
+                    """,
+                    user_id,
+                    queue_name,
+                    json.dumps(payload),
+                    priority,
+                    max_retries,
+                )
             return str(row["id"])
+
+
+async def create_jobs_batch(
+    user_id: str,
+    jobs: List[Dict[str, Any]],
+) -> List[str]:
+    """
+    Insert multiple jobs in a single database call for efficiency.
+    """
+    if not jobs:
+        return []
+
+    async with db.get_pool() as pool:
+        async with pool.acquire() as conn:
+            job_rows = []
+            for job in jobs:
+                if hasattr(job, "model_dump"):
+                    job_dict = job.model_dump()
+                else:
+                    job_dict = job
+
+                run_at_str = job_dict.get("run_at")
+                run_at_dt = None
+                if run_at_str:
+                    run_at_dt = datetime.fromisoformat(run_at_str.replace("Z", "+00:00")).replace(tzinfo=None)
+
+                if run_at_dt:
+                    row = await conn.fetchrow(
+                        """
+                        INSERT INTO jobs (user_id, queue_name, payload, priority, max_retries, run_at)
+                        VALUES ($1, $2, $3::jsonb, $4, $5, $6)
+                        RETURNING id
+                        """,
+                        user_id,
+                        job_dict["queue_name"],
+                        json.dumps(job_dict["payload"]),
+                        job_dict.get("priority", 0),
+                        job_dict.get("max_retries", 3),
+                        run_at_dt,
+                    )
+                else:
+                    row = await conn.fetchrow(
+                        """
+                        INSERT INTO jobs (user_id, queue_name, payload, priority, max_retries)
+                        VALUES ($1, $2, $3::jsonb, $4, $5)
+                        RETURNING id
+                        """,
+                        user_id,
+                        job_dict["queue_name"],
+                        json.dumps(job_dict["payload"]),
+                        job_dict.get("priority", 0),
+                        job_dict.get("max_retries", 3),
+                    )
+                job_rows.append(str(row["id"]))
+
+            return job_rows
 
 
 async def get_job_status(user_id: str, job_id: str) -> Optional[str]:

@@ -40,6 +40,21 @@ class JobCreate(BaseModel):
         default=3, description="The maximum number of retries allowed for the job"
     )
 
+    run_at: Optional[str] = Field(
+        default=None,
+        description="Schedule job to run at specific time (ISO 8601 datetime). If not provided, job runs immediately.",
+    )
+
+
+class JobBatchCreate(BaseModel):
+    """
+    Pydantic Schema for batch job creation
+    """
+
+    jobs: List[JobCreate] = Field(
+        ..., description="List of jobs to enqueue in a single request"
+    )
+
 
 class JobResponse(BaseModel):
     """

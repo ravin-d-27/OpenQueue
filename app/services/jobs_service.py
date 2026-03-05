@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .. import crud
 from ..metrics import (
@@ -14,6 +14,7 @@ from ..metrics import (
     JOBS_NACKED_TOTAL,
     LEASE_EXPIRED_RECOVERED_TOTAL,
 )
+from ..models import JobCreate
 
 """
 Jobs service layer.
@@ -106,6 +107,7 @@ async def enqueue_job(
     payload: Dict[str, Any],
     priority: int = 0,
     max_retries: int = 3,
+    run_at: Optional[str] = None,
 ) -> str:
     """
     Enqueue a job and record metrics.
@@ -118,10 +120,32 @@ async def enqueue_job(
         payload=payload,
         priority=priority,
         max_retries=max_retries,
+        run_at=run_at,
     )
 
     JOBS_ENQUEUED_TOTAL.labels(queue_name=_safe_queue_label(queue_name)).inc()
     return str(job_id)
+
+
+async def enqueue_batch_jobs(
+    *,
+    user_id: str,
+    jobs: List[JobCreate],
+) -> List[str]:
+    """
+    Enqueue multiple jobs in a single request.
+
+    Returns list of job_ids.
+    """
+    job_ids = await crud.create_jobs_batch(
+        user_id=user_id,
+        jobs=jobs,
+    )
+
+    for job in jobs:
+        JOBS_ENQUEUED_TOTAL.labels(queue_name=_safe_queue_label(job.queue_name)).inc()
+
+    return job_ids
 
 
 async def get_status(*, user_id: str, job_id: str) -> Optional[str]:

@@ -101,10 +101,24 @@ def example_producer():
         )
         print(f"Enqueued job with retries: {risky_job_id}")
 
-        # Note: Scheduled jobs (run_at) are not yet supported in the SDK
-        # If you need this feature, it can be added to the SDK
+        # --- Scheduled job (run in the future) ---
+        future_time = "2025-12-31T23:59:59Z"
+        scheduled_job_id = client.enqueue(
+            queue_name="reminders",
+            payload={"user_id": 123, "message": "Happy New Year!"},
+            run_at=future_time,
+        )
+        print(f"Enqueued scheduled job: {scheduled_job_id}")
 
-        return [job_id, priority_job_id, risky_job_id]
+        # --- Batch enqueue ---
+        batch_job_ids = client.enqueue_batch([
+            {"queue_name": "batch-queue", "payload": {"task": "task1"}},
+            {"queue_name": "batch-queue", "payload": {"task": "task2"}, "priority": 10},
+            {"queue_name": "batch-queue", "payload": {"task": "task3"}, "max_retries": 5},
+        ])
+        print(f"Enqueued batch jobs: {len(batch_job_ids)} jobs")
+
+        return [job_id, priority_job_id, risky_job_id, scheduled_job_id]
 
 
 # =============================================================================
@@ -395,21 +409,21 @@ def example_error_handling():
         # JobNotFoundError - Job doesn't exist
         try:
             client.get_status("non-existent-job-id")
-        except JobNotFoundError as e:
+        except (JobNotFoundError, OpenQueueError) as e:
             print(f"Job not found: {e}")
 
         # LeaseTokenError - Invalid or expired lease token
         try:
             # Try to ack with invalid token
             client.ack("some-job-id", "invalid-token")
-        except LeaseTokenError as e:
+        except (LeaseTokenError, OpenQueueError) as e:
             print(f"Lease token error: {e}")
 
         # RateLimitError - Too many requests
         try:
             client.get_status("some-job-id")
-        except RateLimitError as e:
-            print(f"Rate limited: {e}")
+        except (RateLimitError, OpenQueueError) as e:
+            print(f"Rate limited or error: {e}")
 
         # AuthenticationError - Invalid API token
         try:
@@ -520,19 +534,19 @@ if __name__ == "__main__":
     print("OpenQueue SDK - Complete Usage Examples")
     print("=" * 60)
 
-    # Uncomment to run specific examples:
+    # Run all examples
+    example_basic_client()
+    example_context_manager()
+    example_producer()
+    example_check_status()
+    example_list_jobs()
+    example_cancel_job()
+    example_queue_stats()
+    example_basic_worker()
+    example_worker_with_heartbeat()
+    example_error_handling()
+    example_complete_workflow()
 
-    # example_basic_client()
-    # example_context_manager()
-    # example_producer()
-    # example_check_status()
-    # example_list_jobs()
-    # example_cancel_job()
-    # example_queue_stats()
-    # example_basic_worker()
-    # example_worker_with_heartbeat()
-    # example_error_handling()
-    # example_complete_workflow()
-
-    print("\n All examples defined!")
-    print("Uncomment the example functions above to run them.")
+    print("\n" + "=" * 60)
+    print("All examples completed successfully!")
+    print("=" * 60)

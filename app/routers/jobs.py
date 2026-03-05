@@ -5,9 +5,10 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, status
 
 from ..deps import AuthUserDep, RateLimitEnqueueDep, RateLimitListJobsDep
-from ..models import JobCreate, JobListResponse, JobResponse
+from ..models import JobBatchCreate, JobCreate, JobListResponse, JobResponse
 from ..services.jobs_service import (
     cancel_pending_job,
+    enqueue_batch_jobs,
     enqueue_job,
     get_detail,
     get_status,
@@ -35,8 +36,28 @@ async def create_job_endpoint(
         payload=job.payload,
         priority=job.priority,
         max_retries=job.max_retries,
+        run_at=job.run_at,
     )
     return {"job_id": job_id, "status": "queued"}
+
+
+@router.post(
+    "/batch",
+    summary="Enqueue multiple jobs",
+    description="Create multiple jobs in a single request for better performance.",
+    response_model=dict,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_batch_jobs_endpoint(
+    batch: JobBatchCreate,
+    user: AuthUserDep,
+    _: RateLimitEnqueueDep,
+) -> dict:
+    job_ids = await enqueue_batch_jobs(
+        user_id=user["id"],
+        jobs=batch.jobs,
+    )
+    return {"job_ids": job_ids, "count": len(job_ids)}
 
 
 @router.get(
