@@ -162,7 +162,7 @@ client.enqueue(
 while True:
     job = client.lease("welcome-emails", "email-worker-1")
     send_email(job.payload["template"], job.payload["user_id"])
-    client.ack(job.id, lease_token)
+    client.ack(job.id, job.lease_token)
 ```
 
 **Why this pattern:**
@@ -187,7 +187,7 @@ for row in csv_reader:
 # Workers: Process in parallel
 job = client.lease("process-rows", "worker-1")
 process_row(job.payload)
-client.ack(job.id, lease_token, result={"processed": True})
+client.ack(job.id, job.lease_token, result={"processed": True})
 ```
 
 **Why this pattern:**
