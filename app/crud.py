@@ -269,7 +269,7 @@ async def lease_next_job(
                         updated_at = NOW(),
                         started_at = COALESCE(started_at, NOW()),
                         locked_by = $1,
-                        locked_until = NOW() + ($2::text || ' seconds')::interval,
+                        locked_until = NOW() + (($2)::text || ' seconds')::interval,
                         lease_token = gen_random_uuid(),
                         lease_lost_count = CASE
                             WHEN status = 'processing' AND locked_until IS NOT NULL AND locked_until < NOW()
@@ -280,7 +280,7 @@ async def lease_next_job(
                     RETURNING *
                     """,
                     worker_id,
-                    lease_seconds,
+                    str(lease_seconds),
                     row["id"],
                     user_id,
                 )
@@ -381,7 +381,7 @@ async def nack_job(
                         SET status = 'pending',
                             retry_count = retry_count + 1,
                             error_text = $1,
-                            run_at = NOW() + ($2::text || ' seconds')::interval,
+                            run_at = NOW() + (($2)::text || ' seconds')::interval,
                             updated_at = NOW(),
                             locked_until = NULL,
                             locked_by = NULL,
@@ -389,7 +389,7 @@ async def nack_job(
                         WHERE id = $3 AND user_id = $4
                         """,
                         error,
-                        backoff_seconds,
+                        str(backoff_seconds),
                         job_id,
                         user_id,
                     )
@@ -442,7 +442,7 @@ async def heartbeat_job(
             row = await conn.fetchrow(
                 """
                 UPDATE jobs
-                SET locked_until = NOW() + ($1::text || ' seconds')::interval,
+                SET locked_until = NOW() + (($1)::text || ' seconds')::interval,
                     updated_at = NOW()
                 WHERE id = $2
                   AND user_id = $3
@@ -450,7 +450,7 @@ async def heartbeat_job(
                   AND lease_token = $4::uuid
                 RETURNING id
                 """,
-                lease_seconds,
+                str(lease_seconds),
                 job_id,
                 user_id,
                 lease_token,
