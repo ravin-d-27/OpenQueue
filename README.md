@@ -4,6 +4,8 @@ A PostgreSQL-backed job queue service with HTTP API. Built for developers who wa
 
 ![Python Version](https://img.shields.io/badge/python-3.11+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
+[![PyPI](https://img.shields.io/pypi/v/openqueue-pg)](https://pypi.org/project/openqueue-pg/)
+[![GitHub](https://img.shields.io/github/stars/ravin-d-27/OpenQueue)](https://github.com/ravin-d-27/OpenQueue)
 
 ## Why OpenQueue?
 

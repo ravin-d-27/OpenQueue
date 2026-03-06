@@ -1,11 +1,11 @@
 # OpenQueue Python SDK
 
-A Python client for [OpenQueue](https://github.com/ravin-d-27/openqueue), a PostgreSQL-backed job queue service.
+A Python client for [OpenQueue](https://github.com/ravin-d-27/OpenQueue), a PostgreSQL-backed job queue service.
 
 ## Installation
 
 ```bash
-pip install openqueue
+pip install openqueue-pg
 ```
 
 ## Quick Start

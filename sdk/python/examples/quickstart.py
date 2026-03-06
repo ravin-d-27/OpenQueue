@@ -5,7 +5,7 @@ OpenQueue SDK - Complete Usage Examples
 This file provides comprehensive examples for getting started with OpenQueue.
 Copy this file to your project and adapt it to your needs.
 
-Visit: https://github.com/your-org/openqueue for full documentation
+Visit: https://github.com/ravin-d-27/OpenQueue for full documentation
 """
 
 import time
