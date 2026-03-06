@@ -27,7 +27,20 @@ docker compose up --build
 
 This starts:
 - `openqueue-db` - PostgreSQL
-- `openqueue-api` - FastAPI server
+- `openqueue-api` - FastAPI server (port 8000)
+- `openqueue-dashboard` - Web dashboard (port 3000)
+
+### Dashboard
+
+Access the dashboard at: **http://localhost:3000**
+
+Features:
+- Terminal-style dark interface
+- Real-time queue stats with auto-refresh (30s)
+- Job listing with filtering
+- Job detail view
+- Settings for API configuration
+- Local storage caching for offline resilience
 
 ### Configuration
 
@@ -97,22 +110,22 @@ while True:
 ## Architecture
 
 ```
-┌──────────────┐                    ┌──────────────┐
-│  Producer   │                    │   Worker    │
-│ (enqueue)  │                    │  (lease)   │
-└──────┬───────┘                    └──────┬───────┘
-       │                                  │
-       ▼                                  ▼
-┌─────────────────────────────────────────────┐
-│              FastAPI Service                 │
-│  /jobs  │  /queues/*/lease  │  /dashboard │
-└──────────────────┬──────────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────────┐
-│              PostgreSQL Database             │
-│  jobs table  │  users table  │  indexes    │
-└─────────────────────────────────────────────┘
++-----------+                    +----------+
+| Producer |                    | Worker  |
+| (enqueue)                    | (lease)  |
++----+---+                    +----+----+
+     |                              |
+     v                              v
++----------------------------------+
+|         FastAPI Service           |
+|  /jobs  /queues/*/lease  /dashboard
++-----------------+----------------+
+                  |
+                  v
++----------------------------------+
+|       PostgreSQL Database          |
+|  jobs table  users table  indexes
++----------------------------------+
 ```
 
 ## Features
@@ -147,6 +160,7 @@ while True:
 
 - [Concept.md](Concept.md) - Technical deep-dive for contributors
 - [BEGINNER_GUIDE.md](BEGINNER_GUIDE.md) - Architecture walkthrough
+- [system-design/OpenQueue-SystemDesign.excalidraw](system-design/OpenQueue-SystemDesign.excalidraw) - Architecture diagram (import in excalidraw.io)
 
 ## License
 
