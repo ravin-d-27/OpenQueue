@@ -31,3 +31,9 @@ class AuthenticationError(OpenQueueError):
     """Raised when authentication fails."""
 
     pass
+
+
+class ValidationError(OpenQueueError):
+    """Raised when request validation fails (e.g., invalid UUID format)."""
+
+    pass

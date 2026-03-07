@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 
@@ -66,14 +67,14 @@ async def lease_endpoint(
     response_model=dict,
 )
 async def ack_endpoint(
-    job_id: str,
+    job_id: UUID,
     req: AckRequest,
     user: AuthUserDep,
     _: RateLimitAckDep,
 ) -> dict:
     ok = await ack(
         user_id=user["id"],
-        job_id=job_id,
+        job_id=str(job_id),
         lease_token=req.lease_token,
         result=req.result,
     )
@@ -96,14 +97,14 @@ async def ack_endpoint(
     response_model=dict,
 )
 async def nack_endpoint(
-    job_id: str,
+    job_id: UUID,
     req: NackRequest,
     user: AuthUserDep,
     _: RateLimitNackDep,
 ) -> dict:
     ok = await nack(
         user_id=user["id"],
-        job_id=job_id,
+        job_id=str(job_id),
         lease_token=req.lease_token,
         error=req.error,
         retry=req.retry,
@@ -126,14 +127,14 @@ async def nack_endpoint(
     response_model=dict,
 )
 async def heartbeat_endpoint(
-    job_id: str,
+    job_id: UUID,
     req: HeartbeatRequest,
     user: AuthUserDep,
     _: RateLimitHeartbeatDep,
 ) -> dict:
     ok = await heartbeat(
         user_id=user["id"],
-        job_id=job_id,
+        job_id=str(job_id),
         lease_token=req.lease_token,
         lease_seconds=req.lease_seconds,
     )
