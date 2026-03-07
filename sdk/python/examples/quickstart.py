@@ -17,6 +17,7 @@ from openqueue.exceptions import (
     LeaseTokenError,
     OpenQueueError,
     RateLimitError,
+    ValidationError,
 )
 
 # =============================================================================
@@ -405,9 +406,11 @@ def example_error_handling():
     with OpenQueue(BASE_URL, API_TOKEN) as client:
         # --- Handle specific exceptions ---
 
-        # JobNotFoundError - Job doesn't exist
+        # ValidationError - Invalid parameters (e.g., invalid UUID format)
         try:
             client.get_status("non-existent-job-id")
+        except ValidationError as e:
+            print(f"Invalid job ID format: {e}")
         except (JobNotFoundError, OpenQueueError) as e:
             print(f"Job not found: {e}")
 

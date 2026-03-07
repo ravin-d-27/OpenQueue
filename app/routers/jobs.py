@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
 
@@ -66,8 +67,8 @@ async def create_batch_jobs_endpoint(
     description="Return only the current status for a job belonging to the authenticated user.",
     response_model=dict,
 )
-async def job_status_endpoint(job_id: str, user: AuthUserDep) -> dict:
-    status_value = await get_status(user_id=user["id"], job_id=job_id)
+async def job_status_endpoint(job_id: UUID, user: AuthUserDep) -> dict:
+    status_value = await get_status(user_id=user["id"], job_id=str(job_id))
     if not status_value:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Job not found"
@@ -81,8 +82,8 @@ async def job_status_endpoint(job_id: str, user: AuthUserDep) -> dict:
     description="Return full job details (payload/result/error and timestamps).",
     response_model=JobResponse,
 )
-async def job_detail_endpoint(job_id: str, user: AuthUserDep) -> JobResponse:
-    job = await get_detail(user_id=user["id"], job_id=job_id)
+async def job_detail_endpoint(job_id: UUID, user: AuthUserDep) -> JobResponse:
+    job = await get_detail(user_id=user["id"], job_id=str(job_id))
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Job not found"
@@ -129,8 +130,8 @@ async def list_jobs_endpoint(
     description="Cancels a job only if it is still pending.",
     response_model=dict,
 )
-async def cancel_job_endpoint(job_id: str, user: AuthUserDep) -> dict:
-    ok = await cancel_pending_job(user_id=user["id"], job_id=job_id)
+async def cancel_job_endpoint(job_id: UUID, user: AuthUserDep) -> dict:
+    ok = await cancel_pending_job(user_id=user["id"], job_id=str(job_id))
     if not ok:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

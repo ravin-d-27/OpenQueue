@@ -24,10 +24,8 @@ services:
     container_name: openqueue-api
     restart: unless-stopped
     environment:
-      # IMPORTANT: inside compose network, host is the service name "db"
+      PYTHONPATH: .
       DATABASE_URL: postgresql://openqueue:openqueue_password@db:5432/openqueue
-      # Optional but recommended for production-like deployments:
-      # OPENQUEUE_TOKEN_HMAC_SECRET: change-me
     depends_on:
       db:
         condition: service_healthy
@@ -37,12 +35,21 @@ services:
       [
         "sh",
         "-c",
-        "alembic upgrade head && uvicorn app.fastapi_app:app --host 0.0.0.0 --port 8000",
+        "PYTHONPATH=. alembic upgrade head && PYTHONPATH=. uvicorn app.fastapi_app:app --host 0.0.0.0 --port 8000",
       ]
-    # Uncomment for live-reload during local development:
-    # command: ["sh", "-c", "alembic upgrade head && uvicorn app.fastapi_app:app --host 0.0.0.0 --port 8000 --reload"]
-    # volumes:
-    #   - ./app:/app/app:ro
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: openqueue-dashboard
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://api:8000
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
 
 volumes:
   openqueue_pgdata:

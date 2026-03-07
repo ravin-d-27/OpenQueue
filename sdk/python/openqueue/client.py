@@ -13,6 +13,7 @@ from .exceptions import (
     LeaseTokenError,
     OpenQueueError,
     RateLimitError,
+    ValidationError,
 )
 from .models import Job, JobListResponse, LeasedJob, QueueStats
 
@@ -99,6 +100,8 @@ class OpenQueue:
 
         if response.status_code == 401:
             raise AuthenticationError("Invalid API token")
+        if response.status_code == 422:
+            raise ValidationError(f"Validation error: {response.text[:100]}")
         if response.status_code == 429:
             raise RateLimitError("Rate limit exceeded")
         if response.status_code == 404:

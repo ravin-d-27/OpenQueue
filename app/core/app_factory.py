@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from ..middleware import (
     PrometheusHttpMetricsMiddleware,
@@ -60,6 +61,15 @@ def create_app(*, title: str = "OpenQueue", version: str = "0.0.1") -> FastAPI:
             "- `heartbeat`: extends a lease for long-running jobs.\n"
         ),
         openapi_tags=tags_metadata,
+    )
+
+    # CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     # Middleware

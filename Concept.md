@@ -1,5 +1,7 @@
 # OpenQueue — Concept & Technical Documentation
 
+> **Architecture Diagram**: A detailed system design diagram is available at `system-design/OpenQueue-SystemDesign.excalidraw`. To view and edit it, import the file in [Excalidraw](https://excalidraw.com).
+
 OpenQueue is a hosted, PostgreSQL-backed job queue service designed to replace Redis-backed queues for many workloads. It provides a clean HTTP API for **producers** (clients that enqueue work) and **workers** (processes that execute work). OpenQueue is built around a simple idea:
 
 > A queue is a table of jobs. Workers safely "lease" jobs using database row locking, then **ack** (success) or **nack** (failure) with a lease token.
@@ -118,6 +120,19 @@ OpenQueue/
 │       ├── tests/                # SDK tests
 │       ├── examples/             # Usage examples
 │       └── pyproject.toml        # Package config
+│
+├── dashboard/                    # Next.js Web Dashboard
+│   ├── src/
+│   │   ├── app/                 # Next.js pages
+│   │   ├── components/           # React components
+│   │   ├── hooks/                # Custom hooks (useCache)
+│   │   └── lib/                 # Utilities & API client
+│   ├── Dockerfile                # Dashboard container
+│   └── package.json              # Dependencies
+│
+├── system-design/                # Architecture diagrams
+│   ├── OpenQueue-SystemDesign.excalidraw
+│   └── Architecture_diagram.png
 │
 ├── migrations/                   # Alembic database migrations
 ├── tests/                        # Integration tests
