@@ -76,7 +76,7 @@ export default function JobsPage() {
       if (statusFilter !== "all") params.status = statusFilter;
 
       const data = await api.getJobs(params);
-      setJobs(data?.jobs || []);
+      setJobs(data?.items || []);
       setTotal(data?.total || 0);
       setLastUpdated(new Date());
     } catch (err) {
