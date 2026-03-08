@@ -16,6 +16,10 @@ def _set_test_env() -> None:
     """
     os.environ.setdefault("OPENQUEUE_TOKEN_HMAC_SECRET", "openqueue-test-secret")
     os.environ.setdefault("OPENQUEUE_ENV", "test")
+    os.environ.setdefault(
+        "DATABASE_URL",
+        "postgresql://openqueue:openqueue_password@localhost:5432/openqueue",
+    )
 
 
 # pytest-asyncio guidance (no custom event_loop fixture)

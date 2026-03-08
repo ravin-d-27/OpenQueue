@@ -40,5 +40,7 @@ jobs:
           pip install -r requirements.txt
       - name: Run migrations
         run: alembic upgrade head
+      - name: Start server
+        run: uvicorn app.fastapi_app:app --host 0.0.0.0 --port 8000 &
       - name: Run tests
         run: pytest -q

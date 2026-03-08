@@ -108,25 +108,8 @@ while True:
 ```
 
 ## Architecture
-
-```
-+-----------+                    +----------+
-| Producer |                    | Worker  |
-| (enqueue)                    | (lease)  |
-+----+---+                    +----+----+
-     |                              |
-     v                              v
-+----------------------------------+
-|         FastAPI Service           |
-|  /jobs  /queues/*/lease  /dashboard
-+-----------------+----------------+
-                  |
-                  v
-+----------------------------------+
-|       PostgreSQL Database          |
-|  jobs table  users table  indexes
-+----------------------------------+
-```
+Refer to the below image:
+![Architecture Diagram](system-design/Architecture_diagram.png)
 
 ## Features
 
