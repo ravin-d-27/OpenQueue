@@ -1,0 +1,7 @@
+{
+  "framework": null,
+  "env": {
+    "OPENQUEUE_ENV": "prod",
+    "OPENQUEUE_RATE_LIMIT_ENABLED": "false"
+  }
+}
