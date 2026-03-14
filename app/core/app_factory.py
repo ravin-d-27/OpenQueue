@@ -11,6 +11,7 @@ from ..middleware import (
     StructuredLoggingMiddleware,
 )
 from ..routers import dashboard, jobs, observability, workers
+from ..settings import get_settings
 
 
 def create_app(*, title: str = "OpenQueue", version: str = "0.0.1") -> FastAPI:
@@ -64,9 +65,11 @@ def create_app(*, title: str = "OpenQueue", version: str = "0.0.1") -> FastAPI:
     )
 
     # CORS middleware
+    settings = get_settings()
+    cors_origins = [o.strip() for o in settings.cors_origins.split(",")]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

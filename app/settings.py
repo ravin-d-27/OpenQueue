@@ -155,6 +155,16 @@ class Settings(BaseSettings):
     )
 
     # -------------------------
+    # CORS
+    # -------------------------
+
+    cors_origins: str = Field(
+        default="*",
+        alias="OPENQUEUE_CORS_ORIGINS",
+        description="Comma-separated list of allowed CORS origins. Use '*' for all.",
+    )
+
+    # -------------------------
     # Maintenance
     # -------------------------
 
