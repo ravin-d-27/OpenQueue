@@ -6,6 +6,7 @@ from fastapi import Depends, HTTPException, Request, status
 
 from .auth import CurrentUser, get_current_user
 from .rate_limit import DEFAULT_LIMITS, RateLimiter, RateLimitExceeded
+from .settings import get_settings
 
 """
 Shared FastAPI dependencies and helpers.
@@ -82,6 +83,10 @@ def rate_limit(
         request: Request,
         user: AuthUserDep,
     ) -> None:
+        settings = get_settings()
+        if not settings.rate_limit_enabled:
+            return
+
         principal = get_rate_limit_principal(user, request)
         try:
             _rate_limiter.consume(principal_key=principal, action=action, tokens=tokens)

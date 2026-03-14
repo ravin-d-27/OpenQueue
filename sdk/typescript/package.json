@@ -1,0 +1,30 @@
+{
+  "name": "@ravin-d-27/openqueue",
+  "version": "0.1.0",
+  "description": "OpenQueue TypeScript SDK",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --dts",
+    "test": "vitest"
+  },
+  "keywords": [
+    "queue",
+    "job",
+    "worker",
+    "async"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^1.0.0"
+  }
+}
