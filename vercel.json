@@ -1,7 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pip install -r requirements.txt",
-  "devCommand": "pip install -r requirements.txt && python -m uvicorn app.fastapi_app:app --reload",
   "installCommand": "pip install -r requirements.txt",
   "framework": null,
   "routes": [
@@ -12,7 +10,6 @@
   ],
   "functions": {
     "api/index.py": {
-      "runtime": "python3.12",
       "maxDuration": 300
     }
   },
