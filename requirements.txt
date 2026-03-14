@@ -10,7 +10,7 @@ asyncpg
 prometheus-client==0.20.0
 
 # Alembic/SQLAlchemy Postgres driver (sync)
-# Use psycopg v3 for Python 3.13 compatibility. SQLAlchemy will pick this up for the "postgresql+psycopg" dialect.
+# Use psycopg v3 for Python 3.12 compatibility. SQLAlchemy will pick this up for the "postgresql+psycopg" dialect.
 psycopg[binary]==3.2.3
 
 # Testing (unit + integration)
