@@ -13,7 +13,7 @@
   "functions": {
     "api/index.py": {
       "runtime": "python3.13",
-      "maxDuration": 400
+      "maxDuration": 300
     }
   },
   "env": {
