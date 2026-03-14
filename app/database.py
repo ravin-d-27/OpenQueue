@@ -25,6 +25,10 @@ class Database:
             settings.database_url,
             min_size=settings.db_pool_min_size,
             max_size=settings.db_pool_max_size,
+            # Required for PgBouncer / Supabase Transaction pooler:
+            # PgBouncer does not support PostgreSQL named prepared statements,
+            # so asyncpg must be told not to cache them.
+            statement_cache_size=0,
         )
 
         # Optional: set statement_timeout for all connections in the pool.

@@ -76,10 +76,13 @@ class Settings(BaseSettings):
 
     # Pool sizing (used by asyncpg.create_pool when you wire it in)
     db_pool_min_size: int = Field(
-        default=1,
+        default=0,
         alias="OPENQUEUE_DB_POOL_MIN_SIZE",
-        ge=1,
-        description="Minimum number of connections in the asyncpg pool.",
+        ge=0,
+        description=(
+            "Minimum number of connections in the asyncpg pool. "
+            "Set to 0 for lazy connection (required on Vercel/serverless)."
+        ),
     )
     db_pool_max_size: int = Field(
         default=10,
