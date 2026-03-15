@@ -1,10 +1,9 @@
 """
-Vercel Python serverless entry point.
+Vercel Python serverless entry point for OpenQueue FastAPI backend.
 
-Vercel's @vercel/python builder requires the ASGI app to be importable
-from a file inside api/. This shim adds the repo root to sys.path so
-that the 'app' package (app/fastapi_app.py) resolves correctly, then
-re-exports the FastAPI app object as `app`.
+Vercel's @vercel/python builder discovers this file via the rewrites rule
+in vercel.json. Mangum adapts the ASGI app to AWS Lambda / Vercel's
+serverless function interface.
 """
 
 import os
@@ -15,4 +14,7 @@ _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
 
-from app.fastapi_app import app  # noqa: E402  re-exported for Vercel
+from mangum import Mangum  # noqa: E402
+from app.fastapi_app import app  # noqa: E402
+
+handler = Mangum(app, lifespan="off")
