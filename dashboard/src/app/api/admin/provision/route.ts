@@ -1,5 +1,13 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
+import postgres from "postgres";
+
+const sql = postgres(process.env.DATABASE_URL!, {
+  ssl: "require",
+  max: 1,
+  idle_timeout: 20,
+  connect_timeout: 10,
+});
 
 function isAdmin(email: string): boolean {
   const adminEmails = (process.env.ADMIN_EMAILS || "")
@@ -58,6 +66,14 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await provisionRes.json();
+
+    // 5. Clean up signup_requests table (idempotent — ignore if not present).
+    try {
+      await sql`DELETE FROM signup_requests WHERE email = ${email}`;
+    } catch {
+      // Table may not exist yet — that's fine.
+    }
+
     return NextResponse.json(data);
   } catch (err) {
     console.error("[admin/provision] error:", err);

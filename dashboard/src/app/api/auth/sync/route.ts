@@ -9,6 +9,14 @@ const sql = postgres(process.env.DATABASE_URL!, {
   connect_timeout: 10,
 });
 
+function isAdminEmail(email: string): boolean {
+  const adminEmails = (process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return adminEmails.includes(email.toLowerCase());
+}
+
 export async function POST() {
   try {
     const { userId } = await auth();
@@ -22,17 +30,6 @@ export async function POST() {
       return NextResponse.json({ error: "no_email" }, { status: 400 });
     }
 
-    // Verify user is active in Supabase before provisioning.
-    const rows = await sql`
-      SELECT id FROM users
-      WHERE email = ${email} AND is_active = true
-      LIMIT 1
-    `;
-    if (rows.length === 0) {
-      return NextResponse.json({ error: "no_access" }, { status: 403 });
-    }
-
-    // Delegate token generation + hashing to FastAPI (the backend owns the secret).
     const apiUrl =
       process.env.NEXT_PUBLIC_API_URL || "https://open-queue-ivory.vercel.app";
     const adminSecret = process.env.ADMIN_SECRET;
@@ -43,6 +40,22 @@ export async function POST() {
       );
     }
 
+    const admin = isAdminEmail(email);
+
+    // Non-admins: must exist in the database with is_active = true.
+    if (!admin) {
+      const rows = await sql`
+        SELECT id FROM users
+        WHERE email = ${email} AND is_active = true
+        LIMIT 1
+      `;
+      if (rows.length === 0) {
+        return NextResponse.json({ error: "no_access" }, { status: 403 });
+      }
+    }
+
+    // Delegate token generation + hashing to FastAPI (backend owns the secret).
+    // For admins this also upserts them into the users table automatically.
     const provisionRes = await fetch(`${apiUrl}/admin/provision`, {
       method: "POST",
       headers: {
@@ -60,7 +73,7 @@ export async function POST() {
 
     const { token } = await provisionRes.json();
 
-    // Update clerk_id and last_seen_at (token hash is owned by FastAPI).
+    // Update clerk_id and last_seen_at (best-effort, token hash owned by FastAPI).
     await sql`
       UPDATE users
       SET clerk_id = ${userId}, last_seen_at = NOW()

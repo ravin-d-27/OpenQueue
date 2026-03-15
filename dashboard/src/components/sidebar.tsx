@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -47,7 +48,16 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   return (
     <aside className="w-56 bg-black border-r border-[#333] flex flex-col font-mono">
       <div className="p-4 border-b border-[#333]">
-        <h1 className="text-lg font-bold text-[#00ff00]">OpenQueue</h1>
+        <div className="flex items-center gap-2.5 mb-0.5">
+          <Image
+            src="/openqueue-logo.png"
+            alt="OpenQueue"
+            width={28}
+            height={28}
+            className="rounded"
+          />
+          <h1 className="text-lg font-bold text-[#00ff00]">OpenQueue</h1>
+        </div>
         <p className="text-xs text-[#666]">terminal dashboard</p>
       </div>
       <nav className="flex-1 p-2 space-y-1">

@@ -31,23 +31,47 @@ export default async function DashboardLayout({
     redirect("/sign-in");
   }
 
-  // 2. Email must exist in Supabase users table
+  // 2. Get email from Clerk
   const user = await currentUser();
   const email = user?.emailAddresses?.[0]?.emailAddress;
   if (!email) {
-    redirect("/no-access");
-  }
-
-  const rows = await sql`
-    SELECT id FROM users
-    WHERE email = ${email} AND is_active = true
-    LIMIT 1
-  `;
-  if (rows.length === 0) {
-    redirect("/no-access");
+    redirect("/sign-in");
   }
 
   const isAdmin = checkIsAdmin(email);
+
+  // 3. Admins bypass DB check entirely.
+  if (!isAdmin) {
+    // Query without is_active filter so we can distinguish "not found" vs "inactive".
+    const rows = await sql`
+      SELECT is_active FROM users
+      WHERE email = ${email}
+      LIMIT 1
+    `;
+
+    if (rows.length === 0) {
+      // New user — record their signup request and send them to the pending page.
+      await sql`
+        CREATE TABLE IF NOT EXISTS signup_requests (
+          id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          email        TEXT UNIQUE NOT NULL,
+          clerk_id     TEXT,
+          requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await sql`
+        INSERT INTO signup_requests (email, clerk_id)
+        VALUES (${email}, ${userId})
+        ON CONFLICT (email) DO NOTHING
+      `;
+      redirect("/pending");
+    }
+
+    if (!rows[0].is_active) {
+      // Previously deactivated — hard deny.
+      redirect("/no-access");
+    }
+  }
 
   return (
     <>
