@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Key, Save, CheckCircle2, ExternalLink } from "lucide-react";
+import { Key, Save, CheckCircle2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -13,10 +13,12 @@ import { toast } from "sonner";
 export default function SettingsPage() {
   const router = useRouter();
   const [apiToken, setApiToken] = useState("");
-  const [apiUrl, setApiUrl] = useState("http://localhost:8000");
+  const [apiUrl, setApiUrl] = useState("https://open-queue-ivory.vercel.app");
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<"unknown" | "success" | "failed">("unknown");
+  const [connectionStatus, setConnectionStatus] = useState<"unknown" | "success" | "failed">(
+    "unknown"
+  );
 
   useEffect(() => {
     const storedToken = localStorage.getItem("api_token");
@@ -48,7 +50,7 @@ export default function SettingsPage() {
       localStorage.setItem("api_token", apiToken);
       localStorage.setItem("api_url", apiUrl);
       await testConnection();
-      router.push("/");
+      router.push("/dashboard");
     } finally {
       setLoading(false);
     }
@@ -58,7 +60,7 @@ export default function SettingsPage() {
     localStorage.removeItem("api_token");
     localStorage.removeItem("api_url");
     setApiToken("");
-    setApiUrl("http://localhost:8000");
+    setApiUrl("https://open-queue-ivory.vercel.app");
     setConnectionStatus("unknown");
     toast.info("Settings cleared");
   };
@@ -76,31 +78,33 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-4 pt-4">
           <div className="space-y-2">
-            <Label htmlFor="api-url" className="text-[#666]">API URL</Label>
+            <Label htmlFor="api-url" className="text-[#666]">
+              API URL
+            </Label>
             <Input
               id="api-url"
-              placeholder="http://localhost:8000"
+              placeholder="https://open-queue-ivory.vercel.app"
               value={apiUrl}
               onChange={(e) => setApiUrl(e.target.value)}
               className="bg-black border-[#333] text-white placeholder:text-[#444]"
             />
-            <p className="text-xs text-[#444]">
-              The base URL of your OpenQueue API server
-            </p>
+            <p className="text-xs text-[#444]">The base URL of your OpenQueue API server</p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="api-token" className="text-[#666]">API Token</Label>
+            <Label htmlFor="api-token" className="text-[#666]">
+              API Token
+            </Label>
             <Input
               id="api-token"
               type="password"
-              placeholder="Enter your API token"
+              placeholder="oq_live_..."
               value={apiToken}
               onChange={(e) => setApiToken(e.target.value)}
               className="bg-black border-[#333] text-white placeholder:text-[#444]"
             />
             <p className="text-xs text-[#444]">
-              Your OpenQueue API token for authentication
+              Your API token is auto-configured on sign-in. You can override it here.
             </p>
           </div>
 
@@ -118,14 +122,27 @@ export default function SettingsPage() {
           )}
 
           <div className="flex gap-2 pt-4">
-            <Button onClick={handleSave} disabled={loading || !apiToken} className="bg-[#00ff00] text-black hover:bg-[#00cc00]">
+            <Button
+              onClick={handleSave}
+              disabled={loading || !apiToken}
+              className="bg-[#00ff00] text-black hover:bg-[#00cc00]"
+            >
               <Save className="h-4 w-4 mr-2" />
               SAVE
             </Button>
-            <Button variant="outline" onClick={testConnection} disabled={testing || !apiToken} className="border-[#333] text-[#666] hover:text-[#00ff00] hover:border-[#00ff00] bg-transparent">
+            <Button
+              variant="outline"
+              onClick={testConnection}
+              disabled={testing || !apiToken}
+              className="border-[#333] text-[#666] hover:text-[#00ff00] hover:border-[#00ff00] bg-transparent"
+            >
               TEST
             </Button>
-            <Button variant="ghost" onClick={clearSettings} className="text-[#444] hover:text-white">
+            <Button
+              variant="ghost"
+              onClick={clearSettings}
+              className="text-[#444] hover:text-white"
+            >
               CLEAR
             </Button>
           </div>
@@ -134,16 +151,16 @@ export default function SettingsPage() {
 
       <Card className="bg-black border-[#333]">
         <CardHeader className="border-b border-[#222]">
-          <CardTitle className="text-white text-sm">API TOKEN</CardTitle>
+          <CardTitle className="text-white text-sm">ABOUT</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 pt-4">
           <div className="p-3 bg-[#111] border border-[#222]">
-            <p className="text-xs text-[#666] mb-2">Default token:</p>
+            <p className="text-xs text-[#666] mb-2">API endpoint:</p>
             <code className="text-[#00aaff] text-sm">
-              oq_live_qXxA5liMxzRhz3uVTFYziaQSrw8tB05y2hU5O7VivyA
+              https://open-queue-ivory.vercel.app
             </code>
             <p className="text-xs text-[#444] mt-2">
-              For production, create additional users with unique tokens via the API.
+              Your token is automatically provisioned when you sign in with Clerk.
             </p>
           </div>
         </CardContent>

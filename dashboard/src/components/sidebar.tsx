@@ -7,34 +7,42 @@ import {
   ListOrdered,
   Settings,
   Beaker,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const navItems = [
+const baseNavItems = [
   {
     title: "OVERVIEW",
-    href: "/",
+    href: "/dashboard",
     icon: LayoutDashboard,
   },
   {
     title: "QUEUES",
-    href: "/queues",
+    href: "/dashboard/queues",
     icon: ListOrdered,
   },
   {
     title: "JOBS",
-    href: "/jobs",
+    href: "/dashboard/jobs",
     icon: Beaker,
   },
   {
     title: "SETTINGS",
-    href: "/settings",
+    href: "/dashboard/settings",
     icon: Settings,
   },
 ];
 
-export function Sidebar() {
+const adminNavItem = {
+  title: "ADMIN",
+  href: "/dashboard/admin",
+  icon: ShieldCheck,
+};
+
+export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname();
+  const navItems = isAdmin ? [...baseNavItems, adminNavItem] : baseNavItems;
 
   return (
     <aside className="w-56 bg-black border-r border-[#333] flex flex-col font-mono">
@@ -44,7 +52,10 @@ export function Sidebar() {
       </div>
       <nav className="flex-1 p-2 space-y-1">
         {navItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive =
+            item.href === "/dashboard"
+              ? pathname === "/dashboard"
+              : pathname.startsWith(item.href);
           return (
             <Link
               key={item.href}

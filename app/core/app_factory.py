@@ -10,7 +10,7 @@ from ..middleware import (
     RequestIdMiddleware,
     StructuredLoggingMiddleware,
 )
-from ..routers import dashboard, jobs, observability, workers
+from ..routers import admin, dashboard, jobs, observability, workers
 from ..settings import get_settings
 
 
@@ -28,6 +28,10 @@ def create_app(*, title: str = "OpenQueue", version: str = "0.0.1") -> FastAPI:
     - Router modules are responsible for their own paths and tags.
     """
     tags_metadata = [
+        {
+            "name": "Admin",
+            "description": "Admin-only endpoints for user provisioning.",
+        },
         {
             "name": "Jobs (Producer)",
             "description": "Client-facing endpoints to enqueue jobs and inspect/cancel them.",
@@ -82,6 +86,7 @@ def create_app(*, title: str = "OpenQueue", version: str = "0.0.1") -> FastAPI:
 
     # Routers
     app.include_router(observability.router)
+    app.include_router(admin.router)
     app.include_router(jobs.router)
     app.include_router(workers.router)
     app.include_router(dashboard.router)

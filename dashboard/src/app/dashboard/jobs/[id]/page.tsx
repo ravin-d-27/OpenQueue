@@ -82,14 +82,20 @@ export default function JobDetailPage() {
   if (error || !job) {
     return (
       <div className="space-y-4 font-mono">
-        <Button variant="ghost" onClick={() => router.back()} className="text-[#666] hover:text-white">
+        <Button
+          variant="ghost"
+          onClick={() => router.back()}
+          className="text-[#666] hover:text-white"
+        >
           <ArrowLeft className="h-4 w-4 mr-2" />
           BACK
         </Button>
         <div className="flex flex-col items-center justify-center h-64 gap-4">
           <Beaker className="h-8 w-8 text-[#333]" />
           <p className="text-[#666]">{error || "Job not found"}</p>
-          <Button onClick={fetchJob} className="bg-[#00ff00] text-black hover:bg-[#00cc00]">RETRY</Button>
+          <Button onClick={fetchJob} className="bg-[#00ff00] text-black hover:bg-[#00cc00]">
+            RETRY
+          </Button>
         </div>
       </div>
     );
@@ -99,7 +105,11 @@ export default function JobDetailPage() {
     <div className="space-y-6 font-mono">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => router.back()} className="text-[#666] hover:text-white">
+          <Button
+            variant="ghost"
+            onClick={() => router.back()}
+            className="text-[#666] hover:text-white"
+          >
             <ArrowLeft className="h-4 w-4 mr-2" />
             BACK
           </Button>
@@ -111,12 +121,20 @@ export default function JobDetailPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={fetchJob} className="border-[#333] text-[#666] hover:text-[#00ff00] hover:border-[#00ff00] bg-transparent">
+          <Button
+            variant="outline"
+            onClick={fetchJob}
+            className="border-[#333] text-[#666] hover:text-[#00ff00] hover:border-[#00ff00] bg-transparent"
+          >
             <RefreshCw className="h-4 w-4 mr-2" />
             REFRESH
           </Button>
           {job.status === "pending" && (
-            <Button variant="destructive" onClick={handleCancel} className="bg-red-900 text-white hover:bg-red-800">
+            <Button
+              variant="destructive"
+              onClick={handleCancel}
+              className="bg-red-900 text-white hover:bg-red-800"
+            >
               CANCEL
             </Button>
           )}
@@ -147,7 +165,9 @@ export default function JobDetailPage() {
             </div>
             <div className="flex justify-between">
               <span className="text-[#666]">Retries</span>
-              <span className="text-white">{job.retry_count} / {job.max_retries}</span>
+              <span className="text-white">
+                {job.retry_count} / {job.max_retries}
+              </span>
             </div>
           </CardContent>
         </Card>
@@ -200,7 +220,7 @@ export default function JobDetailPage() {
           </CardHeader>
           <CardContent>
             <pre className="bg-[#0a0a0a] p-4 border border-[#222] overflow-x-auto text-sm text-[#00ff00]">
-{JSON.stringify(job.payload, null, 2)}
+              {JSON.stringify(job.payload, null, 2)}
             </pre>
           </CardContent>
         </Card>
@@ -212,7 +232,7 @@ export default function JobDetailPage() {
             </CardHeader>
             <CardContent>
               <pre className="bg-[#0a0a0a] p-4 border border-[#222] overflow-x-auto text-sm text-[#00ff00]">
-{JSON.stringify(job.result, null, 2)}
+                {JSON.stringify(job.result, null, 2)}
               </pre>
             </CardContent>
           </Card>
@@ -225,7 +245,7 @@ export default function JobDetailPage() {
             </CardHeader>
             <CardContent>
               <pre className="bg-[#1a0a0a] p-4 border border-[#ff0000]/30 overflow-x-auto text-sm text-[#ff0000]">
-{job.error_text}
+                {job.error_text}
               </pre>
             </CardContent>
           </Card>

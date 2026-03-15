@@ -16,7 +16,8 @@ export default function QueuesPage() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const { fetchData, getCached } = useCache<QueueStats[]>("queues_list", () => api.getQueueStats(), 30000);
+  const fetchFn = useCallback(() => api.getQueueStats(), []);
+  const { fetchData, getCached } = useCache<QueueStats[]>("queues_list", fetchFn, 30000);
 
   const fetchQueues = useCallback(async () => {
     setLoading(true);
@@ -26,10 +27,10 @@ export default function QueuesPage() {
       if (result.data) {
         setQueues(result.data);
         setLastUpdated(new Date());
-      } else if (queues.length === 0) {
+      } else {
         const cached = getCached();
         if (cached?.data) {
-          setQueues(cached.data);
+          setQueues((prev) => (prev.length === 0 ? cached.data! : prev));
         }
       }
     } catch (err) {
@@ -41,7 +42,7 @@ export default function QueuesPage() {
     } finally {
       setLoading(false);
     }
-  }, [fetchData, getCached, queues.length]);
+  }, [fetchData, getCached]);
 
   useEffect(() => {
     fetchQueues();
@@ -66,7 +67,12 @@ export default function QueuesPage() {
             {lastUpdated ? `Last updated: ${lastUpdated.toLocaleTimeString()}` : "Initializing..."}
           </p>
         </div>
-        <Button onClick={fetchQueues} variant="outline" size="sm" className="border-[#333] text-[#666] hover:text-[#00ff00] hover:border-[#00ff00] bg-transparent">
+        <Button
+          onClick={fetchQueues}
+          variant="outline"
+          size="sm"
+          className="border-[#333] text-[#666] hover:text-[#00ff00] hover:border-[#00ff00] bg-transparent"
+        >
           <RefreshCw className="h-4 w-4 mr-2" />
           REFRESH
         </Button>
@@ -83,9 +89,7 @@ export default function QueuesPage() {
           <CardContent className="flex flex-col items-center justify-center py-12">
             <ListOrdered className="h-12 w-12 text-[#333] mb-4" />
             <p className="text-[#666]">No queues found</p>
-            <p className="text-xs text-[#444] mt-1">
-              Enqueue a job to create a queue
-            </p>
+            <p className="text-xs text-[#444] mt-1">Enqueue a job to create a queue</p>
           </CardContent>
         </Card>
       ) : (

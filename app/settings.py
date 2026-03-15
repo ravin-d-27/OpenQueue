@@ -112,6 +112,15 @@ class Settings(BaseSettings):
         ),
     )
 
+    admin_secret: Optional[str] = Field(
+        default=None,
+        alias="ADMIN_SECRET",
+        description=(
+            "If set, the POST /admin/provision endpoint requires "
+            "an X-Admin-Secret header matching this value."
+        ),
+    )
+
     # -------------------------
     # Rate limiting (in-memory)
     # -------------------------

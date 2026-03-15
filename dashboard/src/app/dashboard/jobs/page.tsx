@@ -8,7 +8,7 @@ import {
   RefreshCw,
   Eye,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { api, Job, JobListResponse } from "@/lib/api";
+import { api, Job } from "@/lib/api";
 
 const statusLabels: Record<string, string> = {
   pending: "PENDING",
@@ -113,7 +113,12 @@ export default function JobsPage() {
             {lastUpdated ? `Last updated: ${lastUpdated.toLocaleTimeString()}` : "Initializing..."}
           </p>
         </div>
-        <Button onClick={fetchJobs} variant="outline" size="sm" className="border-[#333] text-[#666] hover:text-[#00ff00] hover:border-[#00ff00] bg-transparent">
+        <Button
+          onClick={fetchJobs}
+          variant="outline"
+          size="sm"
+          className="border-[#333] text-[#666] hover:text-[#00ff00] hover:border-[#00ff00] bg-transparent"
+        >
           <RefreshCw className="h-4 w-4 mr-2" />
           REFRESH
         </Button>
@@ -205,8 +210,13 @@ export default function JobsPage() {
                         {format(new Date(job.created_at), "MMM d, HH:mm")}
                       </TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="sm" asChild className="text-[#666] hover:text-[#00ff00]">
-                          <Link href={`/jobs/${job.id}`}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          asChild
+                          className="text-[#666] hover:text-[#00ff00]"
+                        >
+                          <Link href={`/dashboard/jobs/${job.id}`}>
                             <Eye className="h-4 w-4" />
                           </Link>
                         </Button>

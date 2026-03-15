@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Key, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { UserButton } from "@clerk/nextjs";
 import { api } from "@/lib/api";
 
 export function Header() {
@@ -29,13 +30,15 @@ export function Header() {
     return () => clearInterval(interval);
   }, []);
 
-  const hasToken = typeof window !== "undefined" && !!localStorage.getItem("api_token");
-
   return (
     <header className="h-14 bg-black border-b border-[#333] px-6 flex items-center justify-between font-mono">
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${isConnected ? "bg-[#00ff00]" : "bg-red-500"} ${checking ? "animate-pulse" : ""}`} />
+          <div
+            className={`w-2 h-2 rounded-full ${isConnected ? "bg-[#00ff00]" : "bg-red-500"} ${
+              checking ? "animate-pulse" : ""
+            }`}
+          />
           <span className="text-sm text-[#888]">
             {checking ? "checking..." : isConnected ? "connected" : "disconnected"}
           </span>
@@ -47,27 +50,15 @@ export function Header() {
         )}
       </div>
       <div className="flex items-center gap-3">
-        <Button 
-          variant="ghost" 
-          size="sm" 
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={checkConnection}
           className="text-[#666] hover:text-[#00ff00] hover:bg-[#111]"
         >
           <RefreshCw className={`h-4 w-4 ${checking ? "animate-spin" : ""}`} />
         </Button>
-        <Button
-          variant={hasToken ? "outline" : "default"}
-          size="sm"
-          onClick={() => {
-            if (!hasToken) {
-              window.location.href = "/settings";
-            }
-          }}
-          className={hasToken ? "border-[#333] text-[#888] hover:text-[#00ff00] hover:border-[#00ff00] bg-transparent" : "bg-[#00ff00] text-black hover:bg-[#00cc00]"}
-        >
-          <Key className="h-4 w-4 mr-2" />
-          {hasToken ? "API OK" : "SETUP"}
-        </Button>
+        <UserButton afterSignOutUrl="/" />
       </div>
     </header>
   );

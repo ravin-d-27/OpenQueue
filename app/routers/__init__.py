@@ -13,10 +13,11 @@ The app factory imports routers from here to keep app wiring clean.
 from __future__ import annotations
 
 __all__ = [
+    "admin",
     "jobs",
     "workers",
     "dashboard",
     "observability",
 ]
 
-from . import dashboard, jobs, observability, workers
+from . import admin, dashboard, jobs, observability, workers

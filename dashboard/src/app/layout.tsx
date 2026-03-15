@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
-import { JetBrains_Mono } from "next/font/google";
+import { JetBrains_Mono, Inter } from "next/font/google";
 import "./globals.css";
+import { ClerkProvider } from "@clerk/nextjs";
 import { Toaster } from "@/components/ui/sonner";
-import { Sidebar } from "@/components/sidebar";
-import { Header } from "@/components/header";
 
-const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"] });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
-  title: "OpenQueue Dashboard",
-  description: "PostgreSQL-backed job queue management",
+  title: "OpenQueue — PostgreSQL Job Queue",
+  description: "A fast, reliable, PostgreSQL-backed job queue with multi-tenancy, retries, scheduling, and a real-time dashboard.",
 };
 
 export default function RootLayout({
@@ -18,19 +18,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${jetbrainsMono.className} antialiased bg-black`}>
-        <div className="flex h-screen overflow-hidden">
-          <Sidebar />
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <Header />
-            <main className="flex-1 overflow-y-auto p-6 bg-black">
-              {children}
-            </main>
-          </div>
-        </div>
-        <Toaster />
-      </body>
-    </html>
+    <ClerkProvider>
+      <html lang="en">
+        <body className={`${inter.variable} ${jetbrainsMono.variable} font-sans antialiased bg-black`}>
+          {children}
+          <Toaster />
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }
