@@ -180,13 +180,13 @@ export default function JobDetailPage() {
             <div className="flex justify-between">
               <span className="text-[#666]">Created</span>
               <span className="text-white text-sm">
-                {format(new Date(job.created_at), "yyyy-MM-dd HH:mm:ss")}
+                {job.created_at ? format(new Date(job.created_at), "yyyy-MM-dd HH:mm:ss") : "—"}
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-[#666]">Scheduled</span>
               <span className="text-white text-sm">
-                {format(new Date(job.run_at), "yyyy-MM-dd HH:mm:ss")}
+                {job.run_at ? format(new Date(job.run_at), "yyyy-MM-dd HH:mm:ss") : "—"}
               </span>
             </div>
             {job.started_at && (
@@ -208,7 +208,7 @@ export default function JobDetailPage() {
             <div className="flex justify-between">
               <span className="text-[#666]">Updated</span>
               <span className="text-white text-sm">
-                {format(new Date(job.updated_at), "yyyy-MM-dd HH:mm:ss")}
+                {job.updated_at ? format(new Date(job.updated_at), "yyyy-MM-dd HH:mm:ss") : "—"}
               </span>
             </div>
           </CardContent>

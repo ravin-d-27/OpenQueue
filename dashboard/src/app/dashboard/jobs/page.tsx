@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { api, Job } from "@/lib/api";
+import { api, Job, QueueStats } from "@/lib/api";
 
 const statusLabels: Record<string, string> = {
   pending: "PENDING",
@@ -55,6 +55,7 @@ export default function JobsPage() {
   const [queueFilter, setQueueFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [queues, setQueues] = useState<QueueStats[]>([]);
 
   const pageSize = 20;
 
@@ -93,6 +94,10 @@ export default function JobsPage() {
     const interval = setInterval(fetchJobs, 30000);
     return () => clearInterval(interval);
   }, [fetchJobs]);
+
+  useEffect(() => {
+    api.getQueueStats().then(setQueues).catch(console.error);
+  }, []);
 
   const totalPages = Math.ceil(total / pageSize);
 
@@ -151,8 +156,11 @@ export default function JobsPage() {
               </SelectTrigger>
               <SelectContent className="bg-black border-[#333]">
                 <SelectItem value="all" className="text-white">ALL QUEUES</SelectItem>
-                <SelectItem value="emails" className="text-white">emails</SelectItem>
-                <SelectItem value="default" className="text-white">default</SelectItem>
+                {queues.map((q) => (
+                  <SelectItem key={q.queue_name} value={q.queue_name} className="text-white">
+                    {q.queue_name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -207,7 +215,7 @@ export default function JobsPage() {
                         {job.retry_count}/{job.max_retries}
                       </TableCell>
                       <TableCell className="text-[#666] text-sm">
-                        {format(new Date(job.created_at), "MMM d, HH:mm")}
+                        {job.created_at ? format(new Date(job.created_at), "MMM d, HH:mm") : "—"}
                       </TableCell>
                       <TableCell>
                         <Button

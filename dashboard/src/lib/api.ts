@@ -24,19 +24,18 @@ export interface QueueStats {
 export interface Job {
   id: string;
   queue_name: string;
-  payload: Record<string, unknown>;
+  payload: Record<string, unknown> | null;
   status: "pending" | "processing" | "completed" | "failed" | "dead" | "cancelled";
   priority: number;
-  retry_count: number;
-  max_retries: number;
-  run_at: string;
-  created_at: string;
-  updated_at: string;
+  retry_count: number | null;
+  max_retries: number | null;
+  run_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
   started_at: string | null;
   finished_at: string | null;
   result: Record<string, unknown> | null;
   error_text: string | null;
-  locked_by: string | null;
 }
 
 export interface JobListResponse {
@@ -127,7 +126,7 @@ export const api = {
   },
 
   async getJob(jobId: string): Promise<Job> {
-    return fetchApi<Job>(`/jobs/${jobId}`);
+    return fetchApi<Job>(`/jobs/${jobId}/detail`);
   },
 
   async enqueueJob(data: {
