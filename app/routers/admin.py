@@ -5,7 +5,7 @@ import string
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 from ..auth import hash_api_token
 from ..database import db
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
 class ProvisionRequest(BaseModel):
-    email: EmailStr
+    email: str
 
 
 class ProvisionResponse(BaseModel):
