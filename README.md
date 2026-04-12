@@ -193,6 +193,67 @@ async with Client("http://localhost:8080/mcp", auth="your-token") as client:
     })
 ```
 
+## In-Memory Server
+
+OpenQueue also provides an **in-memory** job queue that runs without PostgreSQL - perfect for development, testing, or simple workloads.
+
+### Quick Start
+
+```bash
+cd inmemory
+pip install -r requirements.txt
+python main.py
+```
+
+Server runs on port **8001** by default.
+
+### Features
+
+- **Same API** - Drop-in replacement for production OpenQueue
+- **Priorities** - Higher priority jobs processed first
+- **Visibility Timeout** - Auto-recovery from worker crashes
+- **Heartbeats** - Extend leases for long-running jobs
+- **Retry with Backoff** - Exponential backoff (2^retry_count seconds)
+- **Scheduled Jobs** - Run jobs at specific times with `run_at`
+
+### Use Cases
+
+| Scenario | Recommendation |
+|----------|-------------|
+| Production | PostgreSQL-backed (port 8000) |
+| Development | In-memory (port 8001) |
+| Testing/CI | In-memory (port 8001) |
+| Simple apps | In-memory |
+| Multi-tenant SaaS | PostgreSQL-backed |
+
+### Example
+
+```python
+import httpx
+import asyncio
+
+async def main():
+    async with httpx.AsyncClient(base_url="http://localhost:8001") as client:
+        # Enqueue
+        job = await client.post("/jobs", json={
+            "queue_name": "emails",
+            "payload": {"to": "user@example.com"},
+            "priority": 5
+        })
+        
+        # Lease & process
+        leased = await client.post("/queues/emails/lease", json={
+            "worker_id": "worker-1"
+        })
+        
+        # Acknowledge
+        await client.post(f"/jobs/{leased['job']['id']}/ack", json={
+            "lease_token": leased["lease_token"]
+        })
+
+asyncio.run(main())
+```
+
 ## Documentation
 
 - [Concept.md](Concept.md) - Technical deep-dive for contributors
