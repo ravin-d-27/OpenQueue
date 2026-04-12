@@ -110,22 +110,24 @@ OpenQueue/
 │       ├── __init__.py
 │       └── jobs_service.py       # Job operations
 │
-├── sdk/                          # Client SDKs
-│   └── python/                   # Python SDK
-│       ├── openqueue/            # Main package
-│       │   ├── __init__.py
-│       │   ├── client.py         # OpenQueue client
-│       │   ├── models.py         # Data models
-│       │   └── exceptions.py     # Custom exceptions
-│       ├── tests/                # SDK tests
-│       ├── examples/             # Usage examples
-│       └── pyproject.toml        # Package config
+├── mcp/                          # MCP Server (AI integration)
+│   ├── openqueue_mcp.py           # FastMCP server implementation
+│   ├── test_mcp.py                # Usage example
+│   └── requirements.txt           # Dependencies (fastmcp, openqueue-pg)
+│
+├── inmemory/                      # In-Memory Queue (no PostgreSQL)
+│   ├── models.py                 # Job data models
+│   ├── store.py                  # In-memory store with heapq
+│   ├── server.py                  # FastAPI endpoints
+│   ├── main.py                   # Entry point
+│   ├── test_inmemory.py         # Integration test
+│   └── requirements.txt           # Dependencies
 │
 ├── dashboard/                    # Next.js Web Dashboard
 │   ├── src/
 │   │   ├── app/                 # Next.js pages
 │   │   ├── components/           # React components
-│   │   ├── hooks/                # Custom hooks (useCache)
+│   │   ├── hooks/               # Custom hooks (useCache)
 │   │   └── lib/                 # Utilities & API client
 │   ├── Dockerfile                # Dashboard container
 │   └── package.json              # Dependencies

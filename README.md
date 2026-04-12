@@ -139,6 +139,121 @@ Refer to the below image:
 ### Dashboard
 - `GET /dashboard/queues` - Queue statistics
 
+## MCP Server
+
+OpenQueue provides an MCP (Model Context Protocol) server for AI integrations. This allows AI assistants to interact with your job queue.
+
+### Setup
+
+```bash
+# Install dependencies
+pip install -r mcp/requirements.txt
+
+# Run the MCP server
+python mcp/openqueue_mcp.py
+```
+
+The server runs on port 8080 by default (configurable via `PORT` env var).
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `enqueue_job` | Enqueue a single job |
+| `enqueue_job_batch` | Enqueue multiple jobs |
+| `get_job_status` | Get status of a job |
+| `get_job_details` | Get full details of a job |
+| `list_jobs` | List jobs with filtering |
+| `cancel_job` | Cancel a pending job |
+| `lease_job` | Lease a job for processing |
+| `ack_job` | Mark job as completed |
+| `nack_job` | Mark job as failed |
+| `heartbeat` | Extend job lease |
+| `get_queue_stats` | Get queue statistics |
+
+### Authentication
+
+Pass your OpenQueue API token via the `Authorization` header:
+
+```
+Authorization: Bearer <your-token>
+```
+
+Or set the `OPENQUEUE_TOKEN` environment variable.
+
+### Example Usage
+
+```python
+from fastmcp import Client
+
+async with Client("http://localhost:8080/mcp", auth="your-token") as client:
+    result = await client.call_tool("enqueue_job", {
+        "queue_name": "emails",
+        "payload": {"to": "user@example.com"},
+    })
+```
+
+## In-Memory Server
+
+OpenQueue also provides an **in-memory** job queue that runs without PostgreSQL - perfect for development, testing, or simple workloads.
+
+### Quick Start
+
+```bash
+cd inmemory
+pip install -r requirements.txt
+python main.py
+```
+
+Server runs on port **8001** by default.
+
+### Features
+
+- **Same API** - Drop-in replacement for production OpenQueue
+- **Priorities** - Higher priority jobs processed first
+- **Visibility Timeout** - Auto-recovery from worker crashes
+- **Heartbeats** - Extend leases for long-running jobs
+- **Retry with Backoff** - Exponential backoff (2^retry_count seconds)
+- **Scheduled Jobs** - Run jobs at specific times with `run_at`
+
+### Use Cases
+
+| Scenario | Recommendation |
+|----------|-------------|
+| Production | PostgreSQL-backed (port 8000) |
+| Development | In-memory (port 8001) |
+| Testing/CI | In-memory (port 8001) |
+| Simple apps | In-memory |
+| Multi-tenant SaaS | PostgreSQL-backed |
+
+### Example
+
+```python
+import httpx
+import asyncio
+
+async def main():
+    async with httpx.AsyncClient(base_url="http://localhost:8001") as client:
+        # Enqueue
+        job = await client.post("/jobs", json={
+            "queue_name": "emails",
+            "payload": {"to": "user@example.com"},
+            "priority": 5
+        })
+        
+        # Lease & process
+        leased = await client.post("/queues/emails/lease", json={
+            "worker_id": "worker-1"
+        })
+        
+        # Acknowledge
+        await client.post(f"/jobs/{leased['job']['id']}/ack", json={
+            "lease_token": leased["lease_token"]
+        })
+
+asyncio.run(main())
+```
+
 ## Documentation
 
 - [Concept.md](Concept.md) - Technical deep-dive for contributors
